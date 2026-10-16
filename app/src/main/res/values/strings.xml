@@ -1,0 +1,29 @@
+<resources>
+    <string name="app_name">Komgasun</string>
+    <string name="login_title">Iniciar sesión</string>
+    <string name="login_subtitle">Conecta con tu servidor Komga</string>
+    <string name="server_url">Servidor (URL)</string>
+    <string name="server_url_hint">http://192.168.1.100:25600</string>
+    <string name="username">Usuario</string>
+    <string name="password">Contraseña</string>
+    <string name="login_button">Iniciar sesión</string>
+    <string name="logging_in">Iniciando sesión…</string>
+    <string name="logout">Cerrar sesión</string>
+    <string name="libraries">Bibliotecas</string>
+    <string name="series">Series</string>
+    <string name="books">Libros</string>
+    <string name="page">Página</string>
+    <string name="pages">páginas</string>
+    <string name="loading">Cargando…</string>
+    <string name="error">Ocurrió un error</string>
+    <string name="retry">Reintentar</string>
+    <string name="empty_libraries">No se encontraron bibliotecas</string>
+    <string name="empty_series">No hay series en esta biblioteca</string>
+    <string name="empty_books">No hay libros en esta serie</string>
+    <string name="reader_comic">Lector de cómic</string>
+    <string name="reader_pdf">Lector de PDF</string>
+    <string name="reader_epub">Lector de EPUB</string>
+    <string name="read_book">Leer</string>
+    <string name="page_indicator">Página %1$d de %2$d</string>
+    <string name="close">Cerrar</string>
+</resources>

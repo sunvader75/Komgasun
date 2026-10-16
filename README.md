@@ -151,13 +151,10 @@ No publiques contraseñas, cabeceras `Authorization`, libros privados ni registr
 
 [Komelia](https://github.com/Snd-R/Komelia) se distribuye bajo [Apache License 2.0](https://github.com/Snd-R/Komelia/blob/main/LICENSE). Se incluye una copia íntegra en [`licenses/Komelia-Apache-2.0.txt`](licenses/Komelia-Apache-2.0.txt). Esta licencia corresponde al material reutilizado de Komelia; no supone por sí sola que todo el código propio de Komgasun se publique bajo ella.
 
-Al redistribuir material derivado de Komelia, Apache 2.0 exige entregar una copia de la licencia, conservar los avisos originales aplicables e indicar de forma destacada los cambios en los archivos modificados. Si la versión de origen incluye un archivo `NOTICE`, también deben conservarse sus atribuciones aplicables.
 
-Las [atribuciones y notas de procedencia](ATTRIBUTIONS.md) documentan la relación con Komelia y el alcance de esta revisión. Komelia incluye componentes de terceros con licencias propias; no se incorporan sus licencias indiscriminadamente, ya que no se ha identificado su reutilización en Komgasun. Si se confirma la incorporación de alguno, deberán conservarse también sus licencias y avisos. Antes de distribuir APK, debe revisarse que estos incluyan las licencias y atribuciones aplicables: guardarlas en el repositorio no garantiza su inclusión en el paquete Android.
 
-### Código propio de Komgasun
 
-Aún no se ha establecido una licencia general para las aportaciones propias de Komgasun. Que el código sea visible en GitHub no equivale a conceder una licencia de uso, modificación o redistribución sobre esas aportaciones. Antes de reutilizarlas, consulta al titular del proyecto.
+
 
 ## Enlaces
 

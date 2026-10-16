@@ -2,7 +2,7 @@
 
 ## Komelia
 
-Komgasun se ha desarrollado leyendo y tomando como base el código fuente de **Komelia**, con una implementación y una estructura adaptadas a este proyecto Android. Esta relación se reconoce expresamente por indicación del responsable de Komgasun, aunque la comparación realizada no haya identificado copias literales sustanciales en los componentes examinados.
+Komgasun se ha desarrollado leyendo y tomando como base el código fuente de **Komelia**, con una implementación y una estructura adaptadas a este proyecto Android.
 
 - Proyecto original: [Komelia](https://github.com/Snd-R/Komelia).
 - Autor y colaboradores: [Snd-R](https://github.com/Snd-R) y los [colaboradores de Komelia](https://github.com/Snd-R/Komelia/graphs/contributors).
@@ -16,9 +16,8 @@ Gracias a sus autores por el trabajo que ha servido de base a este proyecto. Est
 
 ## Alcance de la adaptación
 
-Komgasun cuenta con una implementación Android en Kotlin que utiliza Jetpack Compose, OkHttp, DataStore, PdfRenderer y un lector EPUB basado en ZIP y WebView. En los componentes comparados se observaron diferencias respecto a las implementaciones de Komelia. Estas diferencias no se presentan como prueba de independencia ni eliminan las obligaciones que correspondan al material derivado.
+Komgasun cuenta con una implementación Android en Kotlin que utiliza Jetpack Compose, OkHttp, DataStore, PdfRenderer y un lector EPUB basado en ZIP y WebView.
 
-Este documento registra la procedencia general; no sustituye los avisos originales ni las indicaciones de modificación que deban conservarse en archivos concretos bajo Apache 2.0. No se han inventado titulares, fechas de copyright ni correspondencias entre archivos que no estén documentadas.
 
 ## Licencias y avisos de terceros
 
@@ -32,4 +31,3 @@ Las dependencias propias de Komgasun también mantienen sus respectivas licencia
 
 La copia de Apache 2.0 y estas atribuciones se incluyen en el repositorio. Antes de distribuir un APK, debe comprobarse que las licencias y avisos aplicables también se entregan a sus destinatarios; estos archivos no se incluyen automáticamente en el paquete Android por estar en la raíz del repositorio.
 
-La inclusión de la licencia de Komelia no establece por sí sola una licencia general para las aportaciones propias de Komgasun. Esa decisión corresponde a su titular.

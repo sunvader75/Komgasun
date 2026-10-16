@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.komgasun.data.model.ItemFilter
+import com.example.komgasun.data.model.SeriesSortOrder
 import com.example.komgasun.data.model.ServerConfig
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -27,6 +28,7 @@ class PreferencesManager(private val context: Context) {
         val KEY_LIBRARIES_FILTER = stringPreferencesKey("libraries_filter")
         val KEY_SERIES_FILTER = stringPreferencesKey("series_filter")
         val KEY_BOOKS_FILTER = stringPreferencesKey("books_filter")
+        val KEY_SERIES_SORT = stringPreferencesKey("series_sort")
     }
 
     val serverConfigFlow: Flow<ServerConfig?> = context.dataStore.data
@@ -62,33 +64,51 @@ class PreferencesManager(private val context: Context) {
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { it[KEY_USERNAME] ?: "" }
 
-    val librariesFilterFlow: Flow<ItemFilter> = context.dataStore.data
-        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
-        .map { ItemFilter.fromName(it[KEY_LIBRARIES_FILTER]) }
+    private fun parseFilterSet(raw: String?): Set<ItemFilter> {
+        if (raw.isNullOrBlank()) return emptySet()
+        return raw.split(",")
+            .mapNotNull { name -> ItemFilter.entries.firstOrNull { it.name.equals(name.trim(), ignoreCase = true) } }
+            .filter { it != ItemFilter.ALL }
+            .toSet()
+    }
 
-    val seriesFilterFlow: Flow<ItemFilter> = context.dataStore.data
+    val librariesFilterFlow: Flow<Set<ItemFilter>> = context.dataStore.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
-        .map { ItemFilter.fromName(it[KEY_SERIES_FILTER]) }
+        .map { parseFilterSet(it[KEY_LIBRARIES_FILTER]) }
 
-    val booksFilterFlow: Flow<ItemFilter> = context.dataStore.data
+    val seriesFilterFlow: Flow<Set<ItemFilter>> = context.dataStore.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
-        .map { ItemFilter.fromName(it[KEY_BOOKS_FILTER]) }
+        .map { parseFilterSet(it[KEY_SERIES_FILTER]) }
 
-    suspend fun saveLibrariesFilter(filter: ItemFilter) {
+    val booksFilterFlow: Flow<Set<ItemFilter>> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { parseFilterSet(it[KEY_BOOKS_FILTER]) }
+
+    val seriesSortFlow: Flow<SeriesSortOrder> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { SeriesSortOrder.fromName(it[KEY_SERIES_SORT]) }
+
+    suspend fun saveLibrariesFilter(filters: Set<ItemFilter>) {
         context.dataStore.edit { preferences ->
-            preferences[KEY_LIBRARIES_FILTER] = filter.name
+            preferences[KEY_LIBRARIES_FILTER] = filters.joinToString(",") { it.name }
         }
     }
 
-    suspend fun saveSeriesFilter(filter: ItemFilter) {
+    suspend fun saveSeriesFilter(filters: Set<ItemFilter>) {
         context.dataStore.edit { preferences ->
-            preferences[KEY_SERIES_FILTER] = filter.name
+            preferences[KEY_SERIES_FILTER] = filters.joinToString(",") { it.name }
         }
     }
 
-    suspend fun saveBooksFilter(filter: ItemFilter) {
+    suspend fun saveBooksFilter(filters: Set<ItemFilter>) {
         context.dataStore.edit { preferences ->
-            preferences[KEY_BOOKS_FILTER] = filter.name
+            preferences[KEY_BOOKS_FILTER] = filters.joinToString(",") { it.name }
+        }
+    }
+
+    suspend fun saveSeriesSort(order: SeriesSortOrder) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_SERIES_SORT] = order.name
         }
     }
 

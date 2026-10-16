@@ -42,7 +42,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.komgasun.R
 import com.example.komgasun.data.model.ItemFilter
 import com.example.komgasun.data.model.LibraryDto
-import com.example.komgasun.data.model.matchesFilter
+import com.example.komgasun.data.model.matchesFilters
 import com.example.komgasun.ui.common.EmptyView
 import com.example.komgasun.ui.common.ErrorView
 import com.example.komgasun.ui.common.FilterChipsRow
@@ -57,7 +57,7 @@ fun LibrariesScreen(
     viewModel: LibrariesViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val filteredLibraries = state.libraries.filter { it.matchesFilter(state.selectedFilter) }
+    val filteredLibraries = state.libraries.filter { it.matchesFilters(state.selectedFilters) }
 
     Scaffold(
         modifier = modifier,
@@ -88,8 +88,9 @@ fun LibrariesScreen(
                 .padding(innerPadding)
         ) {
             FilterChipsRow(
-                selectedFilter = state.selectedFilter,
-                onFilterSelected = viewModel::setFilter
+                selectedFilters = state.selectedFilters,
+                onToggleFilter = viewModel::toggleFilter,
+                onClearFilters = viewModel::clearFilters
             )
 
             when {

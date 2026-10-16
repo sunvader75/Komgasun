@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
 data class LibrariesUiState(
     val isLoading: Boolean = false,
     val libraries: List<LibraryDto> = emptyList(),
-    val selectedFilter: ItemFilter = ItemFilter.ALL,
+    val selectedFilters: Set<ItemFilter> = emptySet(),
     val errorMessage: String? = null
 )
 
@@ -28,17 +28,32 @@ class LibrariesViewModel(
 
     init {
         viewModelScope.launch {
-            repository.preferencesManager.librariesFilterFlow.collect { savedFilter ->
-                _uiState.update { it.copy(selectedFilter = savedFilter) }
+            repository.preferencesManager.librariesFilterFlow.collect { savedFilters ->
+                _uiState.update { it.copy(selectedFilters = savedFilters) }
             }
         }
         loadLibraries()
     }
 
-    fun setFilter(filter: ItemFilter) {
-        _uiState.update { it.copy(selectedFilter = filter) }
+    fun toggleFilter(filter: ItemFilter) {
+        if (filter == ItemFilter.ALL) {
+            clearFilters()
+            return
+        }
+        val current = _uiState.value.selectedFilters
+        val updated = if (current.contains(filter)) current - filter else current + filter
+        setFilters(updated)
+    }
+
+    fun clearFilters() {
+        setFilters(emptySet())
+    }
+
+    fun setFilters(filters: Set<ItemFilter>) {
+        val cleaned = filters.filter { it != ItemFilter.ALL }.toSet()
+        _uiState.update { it.copy(selectedFilters = cleaned) }
         viewModelScope.launch {
-            repository.preferencesManager.saveLibrariesFilter(filter)
+            repository.preferencesManager.saveLibrariesFilter(cleaned)
         }
     }
 

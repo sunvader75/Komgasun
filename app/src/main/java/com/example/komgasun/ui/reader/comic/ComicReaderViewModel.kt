@@ -12,7 +12,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class ComicReaderUiState(
-    val isLoading: Boolean = false,
+    val isLoading: Boolean = true,
+    val isReady: Boolean = false,
     val pages: List<BookPageDto> = emptyList(),
     val initialPage: Int = 0,
     val currentPage: Int = 0,
@@ -31,16 +32,14 @@ class ComicReaderViewModel(
     private var lastSyncedPage: Int = -1
 
     init {
-        viewModelScope.launch {
-            val config = repository.getActiveConfig()
-            _uiState.update { it.copy(serverUrl = config?.serverUrl.orEmpty()) }
-            loadPages()
-        }
+        loadPages()
     }
 
     fun loadPages() {
-        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        _uiState.update { it.copy(isLoading = true, isReady = false, errorMessage = null) }
         viewModelScope.launch {
+            val config = repository.getActiveConfig()
+            val serverUrl = config?.serverUrl.orEmpty()
             val bookResult = repository.getBook(bookId)
             val pagesResult = repository.getBookPages(bookId)
 
@@ -61,6 +60,8 @@ class ComicReaderViewModel(
                 _uiState.update {
                     it.copy(
                         isLoading = false,
+                        isReady = true,
+                        serverUrl = serverUrl,
                         pages = pageList,
                         initialPage = initialPageIndex,
                         currentPage = initialPageIndex
@@ -70,6 +71,8 @@ class ComicReaderViewModel(
                 _uiState.update {
                     it.copy(
                         isLoading = false,
+                        isReady = false,
+                        serverUrl = serverUrl,
                         errorMessage = pagesResult.exceptionOrNull()?.localizedMessage ?: "Error al cargar páginas"
                     )
                 }
@@ -78,7 +81,8 @@ class ComicReaderViewModel(
     }
 
     fun onPageChanged(pageIndex: Int, totalPages: Int) {
-        _uiState.update { it.copy(currentPage = pageIndex) }
+        if (!_uiState.value.isReady) return
+        _uiState.update { it.copy(currentPage = pageIndex, initialPage = pageIndex) }
         val pageNumber = pageIndex + 1
         if (pageNumber == lastSyncedPage) return
         lastSyncedPage = pageNumber
@@ -94,6 +98,17 @@ class ComicReaderViewModel(
             val isCompleted = pageNumber >= total
             repository.syncReadProgressAsync(bookId = bookId, page = pageNumber, completed = isCompleted)
         }
+    }
+
+    fun onReaderClosed() {
+        flushProgress()
+        _uiState.update {
+            it.copy(
+                isReady = false,
+                isLoading = true
+            )
+        }
+        lastSyncedPage = -1
     }
 
     fun toggleControls() {

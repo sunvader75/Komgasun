@@ -1,9 +1,13 @@
 package com.example.komgasun.ui.common
 
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -13,21 +17,50 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 
 @Composable
 fun ZoomableBox(
     modifier: Modifier = Modifier,
     minScale: Float = 1f,
-    maxScale: Float = 4f,
+    maxScale: Float = 5f,
+    resetKey: Any? = null,
     onTap: (() -> Unit)? = null,
+    onZoomChanged: ((Boolean) -> Unit)? = null,
+    onMultiTouchChanged: ((Boolean) -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+    var boxSize by remember { mutableStateOf(IntSize.Zero) }
+
+    LaunchedEffect(resetKey) {
+        scale = 1f
+        offset = Offset.Zero
+        onZoomChanged?.invoke(false)
+        onMultiTouchChanged?.invoke(false)
+    }
 
     Box(
         modifier = modifier
+            .onSizeChanged { boxSize = it }
+            // Intercept multi-touch early in Initial pass to disable parent scroll immediately
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    do {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val pressedCount = event.changes.count { it.pressed }
+                        if (pressedCount >= 2) {
+                            onMultiTouchChanged?.invoke(true)
+                        }
+                    } while (event.changes.any { it.pressed })
+                    onMultiTouchChanged?.invoke(false)
+                }
+            }
+            // Tap & Double-tap
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { onTap?.invoke() },
@@ -35,28 +68,76 @@ fun ZoomableBox(
                         if (scale > 1.05f) {
                             scale = 1f
                             offset = Offset.Zero
+                            onZoomChanged?.invoke(false)
                         } else {
-                            scale = 2.5f
-                            // Center zoom on tapped area roughly
-                            offset = Offset.Zero
+                            val targetScale = 2.5f
+                            if (boxSize.width > 0 && boxSize.height > 0) {
+                                val center = Offset(boxSize.width / 2f, boxSize.height / 2f)
+                                val maxOffsetX = (boxSize.width * (targetScale - 1f)) / 2f
+                                val maxOffsetY = (boxSize.height * (targetScale - 1f)) / 2f
+                                val targetOffset = (center - tapOffset) * (targetScale - 1f)
+                                offset = Offset(
+                                    x = targetOffset.x.coerceIn(-maxOffsetX, maxOffsetX),
+                                    y = targetOffset.y.coerceIn(-maxOffsetY, maxOffsetY)
+                                )
+                            }
+                            scale = targetScale
+                            onZoomChanged?.invoke(true)
                         }
                     }
                 )
             }
+            // Pinch-zoom & Pan
             .pointerInput(Unit) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    val newScale = (scale * zoom).coerceIn(minScale, maxScale)
-                    scale = newScale
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    do {
+                        val event = awaitPointerEvent()
+                        val pressedPointers = event.changes.count { it.pressed }
 
-                    if (scale > 1f) {
-                        val maxOffsetX = (scale - 1f) * 1000f
-                        val maxOffsetY = (scale - 1f) * 1000f
-                        offset = Offset(
-                            x = (offset.x + pan.x).coerceIn(-maxOffsetX, maxOffsetX),
-                            y = (offset.y + pan.y).coerceIn(-maxOffsetY, maxOffsetY)
-                        )
-                    } else {
+                        if (pressedPointers >= 2) {
+                            // Two or more fingers: active pinch-to-zoom
+                            onMultiTouchChanged?.invoke(true)
+                            val zoomChange = event.calculateZoom()
+                            val panChange = event.calculatePan()
+
+                            val newScale = (scale * zoomChange).coerceIn(minScale, maxScale)
+                            scale = newScale
+                            val isZoomed = scale > 1.05f
+                            onZoomChanged?.invoke(isZoomed)
+
+                            if (isZoomed && boxSize.width > 0 && boxSize.height > 0) {
+                                val maxOffsetX = (boxSize.width * (scale - 1f)) / 2f
+                                val maxOffsetY = (boxSize.height * (scale - 1f)) / 2f
+                                offset = Offset(
+                                    x = (offset.x + panChange.x).coerceIn(-maxOffsetX, maxOffsetX),
+                                    y = (offset.y + panChange.y).coerceIn(-maxOffsetY, maxOffsetY)
+                                )
+                            } else {
+                                offset = Offset.Zero
+                            }
+                            event.changes.forEach { it.consume() }
+                        } else if (pressedPointers == 1 && scale > 1.05f) {
+                            // One finger while zoomed in: pan around without paging
+                            val panChange = event.calculatePan()
+                            if (boxSize.width > 0 && boxSize.height > 0) {
+                                val maxOffsetX = (boxSize.width * (scale - 1f)) / 2f
+                                val maxOffsetY = (boxSize.height * (scale - 1f)) / 2f
+                                offset = Offset(
+                                    x = (offset.x + panChange.x).coerceIn(-maxOffsetX, maxOffsetX),
+                                    y = (offset.y + panChange.y).coerceIn(-maxOffsetY, maxOffsetY)
+                                )
+                            }
+                            event.changes.forEach { it.consume() }
+                        }
+                        // When 1 finger and not zoomed in: leave unconsumed for HorizontalPager swipe!
+                    } while (event.changes.any { it.pressed })
+
+                    onMultiTouchChanged?.invoke(false)
+                    if (scale <= 1.05f) {
+                        scale = 1f
                         offset = Offset.Zero
+                        onZoomChanged?.invoke(false)
                     }
                 }
             },

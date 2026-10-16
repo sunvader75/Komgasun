@@ -37,6 +37,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -72,12 +73,14 @@ fun ComicReaderScreen(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(bookId) {
-        viewModel.loadPages()
+        if (!state.isReady) {
+            viewModel.loadPages()
+        }
     }
 
-    DisposableEffect(Unit) {
+    DisposableEffect(bookId) {
         onDispose {
-            viewModel.flushProgress()
+            viewModel.onReaderClosed()
         }
     }
 
@@ -87,7 +90,7 @@ fun ComicReaderScreen(
             .background(Color.Black)
     ) {
         when {
-            state.isLoading -> {
+            state.isLoading || !state.isReady -> {
                 LoadingView(
                     message = stringResource(R.string.loading),
                     modifier = Modifier.fillMaxSize()
@@ -118,6 +121,8 @@ fun ComicReaderScreen(
                     pageCount = { pages.size }
                 )
                 var sliderValue by remember(state.initialPage) { mutableFloatStateOf(state.initialPage.toFloat()) }
+                var isCurrentPageZoomed by remember { mutableStateOf(false) }
+                var isMultiTouchActive by remember { mutableStateOf(false) }
 
                 LaunchedEffect(state.initialPage) {
                     if (state.initialPage in 0 until pages.size && pagerState.currentPage != state.initialPage) {
@@ -128,12 +133,15 @@ fun ComicReaderScreen(
 
                 LaunchedEffect(pagerState.currentPage) {
                     sliderValue = pagerState.currentPage.toFloat()
+                    isCurrentPageZoomed = false
+                    isMultiTouchActive = false
                     viewModel.onPageChanged(pagerState.currentPage, pages.size)
                 }
 
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier.fillMaxSize(),
+                    userScrollEnabled = !isCurrentPageZoomed && !isMultiTouchActive,
                     key = { pages[it].number }
                 ) { pageIndex ->
                     val page = pages[pageIndex]
@@ -141,7 +149,18 @@ fun ComicReaderScreen(
 
                     ZoomableBox(
                         modifier = Modifier.fillMaxSize(),
-                        onTap = viewModel::toggleControls
+                        resetKey = pageIndex,
+                        onTap = viewModel::toggleControls,
+                        onZoomChanged = { zoomed ->
+                            if (pageIndex == pagerState.currentPage) {
+                                isCurrentPageZoomed = zoomed
+                            }
+                        },
+                        onMultiTouchChanged = { multiTouch ->
+                            if (pageIndex == pagerState.currentPage) {
+                                isMultiTouchActive = multiTouch
+                            }
+                        }
                     ) {
                         SubcomposeAsyncImage(
                             model = ImageRequest.Builder(LocalContext.current)

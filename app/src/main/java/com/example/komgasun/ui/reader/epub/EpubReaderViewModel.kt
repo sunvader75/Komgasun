@@ -15,7 +15,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 data class EpubReaderUiState(
-    val isLoading: Boolean = false,
+    val isLoading: Boolean = true,
+    val isReady: Boolean = false,
     val downloadProgress: Float? = null,
     val epubBook: EpubBook? = null,
     val currentChapterIndex: Int = 0,
@@ -40,6 +41,7 @@ class EpubReaderViewModel(
     }
 
     fun initEpub() {
+        _uiState.update { it.copy(isLoading = true, isReady = false, errorMessage = null) }
         viewModelScope.launch {
             val bookResult = repository.getBook(bookId)
             val readProgress = bookResult.getOrNull()?.readProgress
@@ -103,6 +105,7 @@ class EpubReaderViewModel(
                 _uiState.update {
                     it.copy(
                         isLoading = false,
+                        isReady = true,
                         epubBook = book,
                         currentChapterIndex = targetIndex
                     )
@@ -111,6 +114,7 @@ class EpubReaderViewModel(
                 _uiState.update {
                     it.copy(
                         isLoading = false,
+                        isReady = false,
                         errorMessage = "Error al analizar el archivo EPUB: ${e.localizedMessage}"
                     )
                 }
@@ -142,6 +146,17 @@ class EpubReaderViewModel(
             val isCompleted = chapterNumber >= total
             repository.syncReadProgressAsync(bookId = bookId, page = chapterNumber, completed = isCompleted)
         }
+    }
+
+    fun onReaderClosed() {
+        flushProgress()
+        _uiState.update {
+            it.copy(
+                isReady = false,
+                isLoading = true
+            )
+        }
+        lastSyncedChapter = -1
     }
 
     fun nextChapter() {

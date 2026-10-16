@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.komgasun.KomgasunApp
 import com.example.komgasun.data.model.ItemFilter
 import com.example.komgasun.data.model.SeriesDto
+import com.example.komgasun.data.model.SeriesSortOrder
 import com.example.komgasun.data.repository.KomgaRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,7 +16,9 @@ import kotlinx.coroutines.launch
 data class SeriesUiState(
     val isLoading: Boolean = false,
     val seriesList: List<SeriesDto> = emptyList(),
-    val selectedFilter: ItemFilter = ItemFilter.ALL,
+    val selectedFilters: Set<ItemFilter> = emptySet(),
+    val sortOrder: SeriesSortOrder = SeriesSortOrder.ALPHABETICAL,
+    val randomSeed: Long = System.currentTimeMillis(),
     val serverUrl: String = "",
     val errorMessage: String? = null
 )
@@ -30,8 +33,13 @@ class SeriesViewModel(
 
     init {
         viewModelScope.launch {
-            repository.preferencesManager.seriesFilterFlow.collect { savedFilter ->
-                _uiState.update { it.copy(selectedFilter = savedFilter) }
+            repository.preferencesManager.seriesFilterFlow.collect { savedFilters ->
+                _uiState.update { it.copy(selectedFilters = savedFilters) }
+            }
+        }
+        viewModelScope.launch {
+            repository.preferencesManager.seriesSortFlow.collect { savedSort ->
+                _uiState.update { it.copy(sortOrder = savedSort) }
             }
         }
         viewModelScope.launch {
@@ -41,11 +49,37 @@ class SeriesViewModel(
         }
     }
 
-    fun setFilter(filter: ItemFilter) {
-        _uiState.update { it.copy(selectedFilter = filter) }
-        viewModelScope.launch {
-            repository.preferencesManager.saveSeriesFilter(filter)
+    fun toggleFilter(filter: ItemFilter) {
+        if (filter == ItemFilter.ALL) {
+            clearFilters()
+            return
         }
+        val current = _uiState.value.selectedFilters
+        val updated = if (current.contains(filter)) current - filter else current + filter
+        setFilters(updated)
+    }
+
+    fun clearFilters() {
+        setFilters(emptySet())
+    }
+
+    fun setFilters(filters: Set<ItemFilter>) {
+        val cleaned = filters.filter { it != ItemFilter.ALL }.toSet()
+        _uiState.update { it.copy(selectedFilters = cleaned) }
+        viewModelScope.launch {
+            repository.preferencesManager.saveSeriesFilter(cleaned)
+        }
+    }
+
+    fun setSortOrder(order: SeriesSortOrder) {
+        _uiState.update { it.copy(sortOrder = order) }
+        viewModelScope.launch {
+            repository.preferencesManager.saveSeriesSort(order)
+        }
+    }
+
+    fun reshuffle() {
+        _uiState.update { it.copy(randomSeed = System.currentTimeMillis()) }
     }
 
     fun loadSeries(showLoading: Boolean = _uiState.value.seriesList.isEmpty()) {

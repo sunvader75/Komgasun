@@ -184,8 +184,8 @@ class KomgaApiClient(
 
     @Serializable
     private data class ReadProgressUpdatePayload(
-        val page: Int,
-        val completed: Boolean
+        val page: Int? = null,
+        val completed: Boolean? = null
     )
 
     suspend fun updateReadProgress(

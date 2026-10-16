@@ -84,7 +84,10 @@ class KomgaRepository(
         val updated = ReadProgressDto(page = page, completed = completed)
         _recentProgress.update { it + (bookId to updated) }
         repoScope.launch {
-            updateReadProgress(bookId, page, completed)
+            val result = updateReadProgress(bookId, page, completed)
+            if (result.isFailure) {
+                android.util.Log.e("KomgaRepository", "Failed to update read progress on server for book $bookId", result.exceptionOrNull())
+            }
         }
     }
 

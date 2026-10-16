@@ -177,11 +177,18 @@ fun StandardTopBar(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilterChipsRow(
-    selectedFilter: ItemFilter,
-    onFilterSelected: (ItemFilter) -> Unit,
+    selectedFilters: Set<ItemFilter>,
+    onToggleFilter: (ItemFilter) -> Unit,
+    onClearFilters: () -> Unit,
     modifier: Modifier = Modifier,
-    availableFilters: List<ItemFilter> = ItemFilter.entries
+    availableFilters: List<ItemFilter> = listOf(
+        ItemFilter.UNREAD,
+        ItemFilter.IN_PROGRESS,
+        ItemFilter.READ,
+        ItemFilter.UNAVAILABLE
+    )
 ) {
+    val isAllSelected = selectedFilters.isEmpty() || selectedFilters.contains(ItemFilter.ALL)
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -190,12 +197,30 @@ fun FilterChipsRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // "Todos" chip
+        FilterChip(
+            selected = isAllSelected,
+            onClick = onClearFilters,
+            label = { Text(ItemFilter.ALL.label) },
+            leadingIcon = if (isAllSelected) {
+                {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            } else null
+        )
+
+        // Specific filter chips (can multi-select)
         availableFilters.forEach { filter ->
+            val isSelected = selectedFilters.contains(filter)
             FilterChip(
-                selected = selectedFilter == filter,
-                onClick = { onFilterSelected(filter) },
+                selected = isSelected,
+                onClick = { onToggleFilter(filter) },
                 label = { Text(filter.label) },
-                leadingIcon = if (selectedFilter == filter) {
+                leadingIcon = if (isSelected) {
                     {
                         Icon(
                             imageVector = Icons.Default.Check,

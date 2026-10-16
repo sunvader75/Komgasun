@@ -32,6 +32,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,7 +53,8 @@ import com.example.komgasun.data.model.BookType
 import com.example.komgasun.data.model.ItemFilter
 import com.example.komgasun.data.model.detectBookType
 import com.example.komgasun.data.model.formatBadge
-import com.example.komgasun.data.model.matchesFilter
+import com.example.komgasun.data.model.matchesFilters
+import com.example.komgasun.data.model.sortedByNumbering
 import com.example.komgasun.data.remote.KomgaApiClient
 import com.example.komgasun.ui.common.EmptyView
 import com.example.komgasun.ui.common.ErrorView
@@ -70,7 +72,11 @@ fun BooksScreen(
     viewModel: BooksViewModel = viewModel(key = seriesId) { BooksViewModel(seriesId) }
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val filteredBooks = state.books.filter { it.matchesFilter(state.selectedFilter) }
+    val filteredBooks = remember(state.books, state.selectedFilters) {
+        state.books
+            .filter { it.matchesFilters(state.selectedFilters) }
+            .sortedByNumbering()
+    }
 
     LifecycleResumeEffect(seriesId) {
         viewModel.loadBooks(showLoading = false)
@@ -114,8 +120,9 @@ fun BooksScreen(
                 .padding(innerPadding)
         ) {
             FilterChipsRow(
-                selectedFilter = state.selectedFilter,
-                onFilterSelected = viewModel::setFilter
+                selectedFilters = state.selectedFilters,
+                onToggleFilter = viewModel::toggleFilter,
+                onClearFilters = viewModel::clearFilters
             )
 
             when {

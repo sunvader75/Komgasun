@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.komgasun.KomgasunApp
 import com.example.komgasun.data.model.BookDto
 import com.example.komgasun.data.model.ItemFilter
+import com.example.komgasun.data.model.sortedByNumbering
 import com.example.komgasun.data.repository.KomgaRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,7 +16,7 @@ import kotlinx.coroutines.launch
 data class BooksUiState(
     val isLoading: Boolean = false,
     val books: List<BookDto> = emptyList(),
-    val selectedFilter: ItemFilter = ItemFilter.ALL,
+    val selectedFilters: Set<ItemFilter> = emptySet(),
     val serverUrl: String = "",
     val errorMessage: String? = null
 )
@@ -30,8 +31,8 @@ class BooksViewModel(
 
     init {
         viewModelScope.launch {
-            repository.preferencesManager.booksFilterFlow.collect { savedFilter ->
-                _uiState.update { it.copy(selectedFilter = savedFilter) }
+            repository.preferencesManager.booksFilterFlow.collect { savedFilters ->
+                _uiState.update { it.copy(selectedFilters = savedFilters) }
             }
         }
         viewModelScope.launch {
@@ -55,10 +56,25 @@ class BooksViewModel(
         }
     }
 
-    fun setFilter(filter: ItemFilter) {
-        _uiState.update { it.copy(selectedFilter = filter) }
+    fun toggleFilter(filter: ItemFilter) {
+        if (filter == ItemFilter.ALL) {
+            clearFilters()
+            return
+        }
+        val current = _uiState.value.selectedFilters
+        val updated = if (current.contains(filter)) current - filter else current + filter
+        setFilters(updated)
+    }
+
+    fun clearFilters() {
+        setFilters(emptySet())
+    }
+
+    fun setFilters(filters: Set<ItemFilter>) {
+        val cleaned = filters.filter { it != ItemFilter.ALL }.toSet()
+        _uiState.update { it.copy(selectedFilters = cleaned) }
         viewModelScope.launch {
-            repository.preferencesManager.saveBooksFilter(filter)
+            repository.preferencesManager.saveBooksFilter(cleaned)
         }
     }
 
@@ -69,7 +85,7 @@ class BooksViewModel(
         viewModelScope.launch {
             val result = repository.getBooks(seriesId)
             result.onSuccess { list ->
-                _uiState.update { it.copy(isLoading = false, books = list) }
+                _uiState.update { it.copy(isLoading = false, books = list.sortedByNumbering()) }
             }.onFailure { error ->
                 _uiState.update {
                     it.copy(

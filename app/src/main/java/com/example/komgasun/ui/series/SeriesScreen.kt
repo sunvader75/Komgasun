@@ -17,10 +17,15 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,6 +37,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,7 +57,9 @@ import coil.request.ImageRequest
 import com.example.komgasun.R
 import com.example.komgasun.data.model.ItemFilter
 import com.example.komgasun.data.model.SeriesDto
-import com.example.komgasun.data.model.matchesFilter
+import com.example.komgasun.data.model.SeriesSortOrder
+import com.example.komgasun.data.model.matchesFilters
+import com.example.komgasun.data.model.sortedByOrder
 import com.example.komgasun.data.remote.KomgaApiClient
 import com.example.komgasun.ui.common.EmptyView
 import com.example.komgasun.ui.common.ErrorView
@@ -67,7 +77,13 @@ fun SeriesScreen(
     viewModel: SeriesViewModel = viewModel(key = libraryId) { SeriesViewModel(libraryId) }
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val filteredSeries = state.seriesList.filter { it.matchesFilter(state.selectedFilter) }
+    var showSortMenu by remember { mutableStateOf(false) }
+
+    val filteredSeries = remember(state.seriesList, state.selectedFilters, state.sortOrder, state.randomSeed) {
+        state.seriesList
+            .filter { it.matchesFilters(state.selectedFilters) }
+            .sortedByOrder(state.sortOrder, state.randomSeed)
+    }
 
     LifecycleResumeEffect(libraryId) {
         viewModel.loadSeries(showLoading = false)
@@ -94,6 +110,42 @@ fun SeriesScreen(
                     }
                 },
                 actions = {
+                    if (state.sortOrder == SeriesSortOrder.RANDOM) {
+                        IconButton(onClick = viewModel::reshuffle) {
+                            Icon(
+                                Icons.Default.Shuffle,
+                                contentDescription = "Reordenar aleatoriamente"
+                            )
+                        }
+                    }
+
+                    Box {
+                        IconButton(onClick = { showSortMenu = true }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Sort,
+                                contentDescription = "Ordenar"
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showSortMenu,
+                            onDismissRequest = { showSortMenu = false }
+                        ) {
+                            SeriesSortOrder.entries.forEach { order ->
+                                val isSelected = state.sortOrder == order
+                                DropdownMenuItem(
+                                    text = { Text(order.label) },
+                                    onClick = {
+                                        viewModel.setSortOrder(order)
+                                        showSortMenu = false
+                                    },
+                                    trailingIcon = if (isSelected) {
+                                        { Icon(Icons.Default.Check, contentDescription = null) }
+                                    } else null
+                                )
+                            }
+                        }
+                    }
+
                     IconButton(onClick = viewModel::loadSeries) {
                         Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.retry))
                     }
@@ -111,8 +163,9 @@ fun SeriesScreen(
                 .padding(innerPadding)
         ) {
             FilterChipsRow(
-                selectedFilter = state.selectedFilter,
-                onFilterSelected = viewModel::setFilter
+                selectedFilters = state.selectedFilters,
+                onToggleFilter = viewModel::toggleFilter,
+                onClearFilters = viewModel::clearFilters
             )
 
             when {

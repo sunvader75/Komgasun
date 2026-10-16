@@ -83,12 +83,14 @@ fun PdfReaderScreen(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(bookId) {
-        viewModel.initReader()
+        if (!state.isReady) {
+            viewModel.initReader()
+        }
     }
 
-    DisposableEffect(Unit) {
+    DisposableEffect(bookId) {
         onDispose {
-            viewModel.flushProgress()
+            viewModel.onReaderClosed()
         }
     }
 
@@ -133,7 +135,7 @@ fun PdfReaderScreen(
                     }
                 }
             }
-            state.isLoading -> {
+            state.isLoading || !state.isReady -> {
                 LoadingView(
                     message = "Cargando documento PDF...",
                     modifier = Modifier.fillMaxSize()
@@ -165,6 +167,8 @@ fun PdfReaderScreen(
                         pageCount = { totalPages }
                     )
                     var sliderValue by remember(state.initialPage) { mutableFloatStateOf(state.initialPage.toFloat()) }
+                    var isCurrentPageZoomed by remember { mutableStateOf(false) }
+                    var isMultiTouchActive by remember { mutableStateOf(false) }
 
                     LaunchedEffect(state.initialPage) {
                         if (state.initialPage in 0 until totalPages && pagerState.currentPage != state.initialPage) {
@@ -175,12 +179,15 @@ fun PdfReaderScreen(
 
                     LaunchedEffect(pagerState.currentPage) {
                         sliderValue = pagerState.currentPage.toFloat()
+                        isCurrentPageZoomed = false
+                        isMultiTouchActive = false
                         viewModel.onPageChanged(pagerState.currentPage, totalPages)
                     }
 
                     HorizontalPager(
                         state = pagerState,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        userScrollEnabled = !isCurrentPageZoomed && !isMultiTouchActive
                     ) { pageIndex ->
                         when (state.mode) {
                             is PdfSourceMode.NativeRenderer -> {
@@ -195,7 +202,18 @@ fun PdfReaderScreen(
 
                                 ZoomableBox(
                                     modifier = Modifier.fillMaxSize(),
-                                    onTap = viewModel::toggleControls
+                                    resetKey = pageIndex,
+                                    onTap = viewModel::toggleControls,
+                                    onZoomChanged = { zoomed ->
+                                        if (pageIndex == pagerState.currentPage) {
+                                            isCurrentPageZoomed = zoomed
+                                        }
+                                    },
+                                    onMultiTouchChanged = { multiTouch ->
+                                        if (pageIndex == pagerState.currentPage) {
+                                            isMultiTouchActive = multiTouch
+                                        }
+                                    }
                                 ) {
                                     if (bitmap != null) {
                                         Image(
@@ -219,7 +237,18 @@ fun PdfReaderScreen(
 
                                 ZoomableBox(
                                     modifier = Modifier.fillMaxSize(),
-                                    onTap = viewModel::toggleControls
+                                    resetKey = pageIndex,
+                                    onTap = viewModel::toggleControls,
+                                    onZoomChanged = { zoomed ->
+                                        if (pageIndex == pagerState.currentPage) {
+                                            isCurrentPageZoomed = zoomed
+                                        }
+                                    },
+                                    onMultiTouchChanged = { multiTouch ->
+                                        if (pageIndex == pagerState.currentPage) {
+                                            isMultiTouchActive = multiTouch
+                                        }
+                                    }
                                 ) {
                                     SubcomposeAsyncImage(
                                         model = ImageRequest.Builder(LocalContext.current)

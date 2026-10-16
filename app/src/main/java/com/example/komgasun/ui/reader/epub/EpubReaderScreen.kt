@@ -76,12 +76,14 @@ fun EpubReaderScreen(
     var showChapterDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(bookId) {
-        viewModel.initEpub()
+        if (!state.isReady) {
+            viewModel.initEpub()
+        }
     }
 
-    DisposableEffect(Unit) {
+    DisposableEffect(bookId) {
         onDispose {
-            viewModel.flushProgress()
+            viewModel.onReaderClosed()
         }
     }
 
@@ -224,7 +226,7 @@ fun EpubReaderScreen(
                         )
                     }
                 }
-                state.isLoading -> {
+                state.isLoading || !state.isReady -> {
                     LoadingView(
                         message = "Procesando contenido del libro...",
                         modifier = Modifier.fillMaxSize()

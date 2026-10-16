@@ -114,4 +114,99 @@ class BookDtoTest {
         assertTrue(readSeries.matchesFilter(ItemFilter.READ))
         assertTrue(unavailableSeries.matchesFilter(ItemFilter.UNAVAILABLE))
     }
+
+    @Test
+    fun testMultiFilter_matchesFilters() {
+        val unreadBook = BookDto(id = "1", seriesId = "s1", name = "Book 1")
+        val inProgressBook = BookDto(
+            id = "2", seriesId = "s1", name = "Book 2",
+            readProgress = ReadProgressDto(page = 15, completed = false)
+        )
+        val readBook = BookDto(
+            id = "3", seriesId = "s1", name = "Book 3",
+            readProgress = ReadProgressDto(page = 30, completed = true)
+        )
+        val unavailableBook = BookDto(
+            id = "4", seriesId = "s1", name = "Book 4",
+            media = BookMediaDto(status = "UNAVAILABLE")
+        )
+
+        // Empty filter set matches all
+        assertTrue(unreadBook.matchesFilters(emptySet()))
+        assertTrue(inProgressBook.matchesFilters(emptySet()))
+        assertTrue(readBook.matchesFilters(emptySet()))
+        assertTrue(unavailableBook.matchesFilters(emptySet()))
+
+        // Set with ALL matches all
+        assertTrue(unreadBook.matchesFilters(setOf(ItemFilter.ALL)))
+        assertTrue(inProgressBook.matchesFilters(setOf(ItemFilter.ALL)))
+
+        // Multi-select: UNREAD + IN_PROGRESS
+        val unreadAndInProgress = setOf(ItemFilter.UNREAD, ItemFilter.IN_PROGRESS)
+        assertTrue(unreadBook.matchesFilters(unreadAndInProgress))
+        assertTrue(inProgressBook.matchesFilters(unreadAndInProgress))
+        assertFalse(readBook.matchesFilters(unreadAndInProgress))
+        assertFalse(unavailableBook.matchesFilters(unreadAndInProgress))
+
+        // Multi-select: READ + UNAVAILABLE
+        val readAndUnavailable = setOf(ItemFilter.READ, ItemFilter.UNAVAILABLE)
+        assertFalse(unreadBook.matchesFilters(readAndUnavailable))
+        assertFalse(inProgressBook.matchesFilters(readAndUnavailable))
+        assertTrue(readBook.matchesFilters(readAndUnavailable))
+        assertTrue(unavailableBook.matchesFilters(readAndUnavailable))
+    }
+
+    @Test
+    fun testSeriesSortOrder_fromName() {
+        assertEquals(SeriesSortOrder.ALPHABETICAL, SeriesSortOrder.fromName("ALPHABETICAL"))
+        assertEquals(SeriesSortOrder.ALPHABETICAL, SeriesSortOrder.fromName("alphabetical"))
+        assertEquals(SeriesSortOrder.RANDOM, SeriesSortOrder.fromName("RANDOM"))
+        assertEquals(SeriesSortOrder.RANDOM, SeriesSortOrder.fromName("random"))
+        assertEquals(SeriesSortOrder.ALPHABETICAL, SeriesSortOrder.fromName(null))
+        assertEquals(SeriesSortOrder.ALPHABETICAL, SeriesSortOrder.fromName("UNKNOWN"))
+    }
+
+    @Test
+    fun testSeriesSort_alphabetical() {
+        val seriesBatman = SeriesDto(id = "1", libraryId = "lib", name = "Batman", metadata = SeriesMetadataDto(title = "Batman"))
+        val seriesSuperman = SeriesDto(id = "2", libraryId = "lib", name = "Superman", metadata = SeriesMetadataDto(title = "superman"))
+        val seriesAquaman = SeriesDto(id = "3", libraryId = "lib", name = "Aquaman", metadata = SeriesMetadataDto(title = ""))
+        val seriesZatanna = SeriesDto(id = "4", libraryId = "lib", name = "Zatanna")
+
+        val list = listOf(seriesSuperman, seriesZatanna, seriesBatman, seriesAquaman)
+        val sorted = list.sortedByOrder(SeriesSortOrder.ALPHABETICAL)
+
+        assertEquals(listOf("Aquaman", "Batman", "Superman", "Zatanna"), sorted.map { it.name })
+    }
+
+    @Test
+    fun testSeriesSort_random() {
+        val seriesList = (1..20).map {
+            SeriesDto(id = "$it", libraryId = "lib", name = "Series $it")
+        }
+
+        val shuffled1 = seriesList.sortedByOrder(SeriesSortOrder.RANDOM, randomSeed = 42L)
+        val shuffled2 = seriesList.sortedByOrder(SeriesSortOrder.RANDOM, randomSeed = 42L)
+        val shuffled3 = seriesList.sortedByOrder(SeriesSortOrder.RANDOM, randomSeed = 999L)
+
+        // Same seed produces same order
+        assertEquals(shuffled1.map { it.id }, shuffled2.map { it.id })
+        // Different seed produces different order
+        assertFalse(shuffled1.map { it.id } == shuffled3.map { it.id })
+    }
+
+    @Test
+    fun testBookSort_numbering() {
+        val book1 = BookDto(id = "1", seriesId = "s", name = "Issue #1", metadata = BookMetadataDto(number = "1"))
+        val book1_5 = BookDto(id = "1.5", seriesId = "s", name = "Special #1.5", metadata = BookMetadataDto(number = "1.5"))
+        val book2 = BookDto(id = "2", seriesId = "s", name = "Issue #02", metadata = BookMetadataDto(number = "02"))
+        val book10 = BookDto(id = "10", seriesId = "s", name = "Issue #10", number = 10)
+        val bookAnnual = BookDto(id = "A", seriesId = "s", name = "Annual A", number = 0)
+        val bookZAnnual = BookDto(id = "Z", seriesId = "s", name = "Annual Z", number = 0)
+
+        val unsorted = listOf(book10, bookAnnual, book2, book1_5, bookZAnnual, book1)
+        val sorted = unsorted.sortedByNumbering()
+
+        assertEquals(listOf("1", "1.5", "2", "10", "A", "Z"), sorted.map { it.id })
+    }
 }

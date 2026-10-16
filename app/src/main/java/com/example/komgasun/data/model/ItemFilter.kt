@@ -46,3 +46,22 @@ fun LibraryDto.matchesFilter(filter: ItemFilter): Boolean {
         ItemFilter.UNREAD, ItemFilter.IN_PROGRESS, ItemFilter.READ -> !unavailable
     }
 }
+
+fun SeriesDto.matchesFilters(filters: Set<ItemFilter>): Boolean {
+    val active = filters.filter { it != ItemFilter.ALL }
+    if (active.isEmpty()) return true
+    return active.any { this.matchesFilter(it) }
+}
+
+fun BookDto.matchesFilters(filters: Set<ItemFilter>): Boolean {
+    val active = filters.filter { it != ItemFilter.ALL }
+    if (active.isEmpty()) return true
+    return active.any { this.matchesFilter(it) }
+}
+
+fun LibraryDto.matchesFilters(filters: Set<ItemFilter>): Boolean {
+    val active = filters.filter { it != ItemFilter.ALL }
+    if (active.isEmpty()) return true
+    return active.any { this.matchesFilter(it) }
+}
+

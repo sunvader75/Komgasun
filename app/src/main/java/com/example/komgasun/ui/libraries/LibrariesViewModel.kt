@@ -74,6 +74,31 @@ class LibrariesViewModel(
         }
     }
 
+    fun emptyTrash(libraryId: String, onDone: (Result<Unit>) -> Unit = {}) {
+        viewModelScope.launch {
+            val result = repository.emptyTrash(libraryId)
+            loadLibraries()
+            onDone(result)
+        }
+    }
+
+    fun emptyTrashAll(onDone: (Result<Unit>) -> Unit = {}) {
+        viewModelScope.launch {
+            val list = _uiState.value.libraries
+            var lastError: Throwable? = null
+            for (lib in list) {
+                val res = repository.emptyTrash(lib.id)
+                if (res.isFailure) lastError = res.exceptionOrNull()
+            }
+            loadLibraries()
+            if (lastError != null) {
+                onDone(Result.failure(lastError))
+            } else {
+                onDone(Result.success(Unit))
+            }
+        }
+    }
+
     fun logout(onLoggedOut: () -> Unit) {
         viewModelScope.launch {
             repository.logout()

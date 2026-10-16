@@ -26,4 +26,10 @@
     <string name="read_book">Leer</string>
     <string name="page_indicator">Página %1$d de %2$d</string>
     <string name="close">Cerrar</string>
+    <string name="delete">Eliminar</string>
+    <string name="delete_file">Eliminar archivo</string>
+    <string name="delete_series">Eliminar serie</string>
+    <string name="empty_trash">Vaciar papelera</string>
+    <string name="empty_trash_all">Vaciar todas las papeleras</string>
+    <string name="cancel">Cancelar</string>
 </resources>

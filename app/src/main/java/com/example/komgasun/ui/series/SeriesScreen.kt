@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -20,8 +22,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -31,14 +37,18 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +75,7 @@ import com.example.komgasun.ui.common.EmptyView
 import com.example.komgasun.ui.common.ErrorView
 import com.example.komgasun.ui.common.FilterChipsRow
 import com.example.komgasun.ui.common.LoadingView
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,7 +88,11 @@ fun SeriesScreen(
     viewModel: SeriesViewModel = viewModel(key = libraryId) { SeriesViewModel(libraryId) }
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     var showSortMenu by remember { mutableStateOf(false) }
+    var seriesToDelete by remember { mutableStateOf<SeriesDto?>(null) }
+    var showEmptyTrashDialog by remember { mutableStateOf(false) }
 
     val filteredSeries = remember(state.seriesList, state.selectedFilters, state.sortOrder, state.randomSeed) {
         state.seriesList
@@ -90,8 +105,77 @@ fun SeriesScreen(
         onPauseOrDispose { }
     }
 
+    if (seriesToDelete != null) {
+        val target = seriesToDelete!!
+        val title = target.metadata.title.ifBlank { target.name }
+        AlertDialog(
+            onDismissRequest = { seriesToDelete = null },
+            title = { Text(stringResource(R.string.delete_series)) },
+            text = {
+                Text("¿Eliminar todos los archivos de '$title'? Se borrarán físicamente del servidor los cómics de esta serie. Quedarán como no disponibles hasta vaciar la papelera.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        seriesToDelete = null
+                        viewModel.deleteSeries(target.id) { res ->
+                            scope.launch {
+                                if (res.isSuccess) {
+                                    snackbarHostState.showSnackbar("Archivos de '$title' eliminados")
+                                } else {
+                                    snackbarHostState.showSnackbar("Error al eliminar: ${res.exceptionOrNull()?.localizedMessage}")
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { seriesToDelete = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    if (showEmptyTrashDialog) {
+        AlertDialog(
+            onDismissRequest = { showEmptyTrashDialog = false },
+            title = { Text(stringResource(R.string.empty_trash)) },
+            text = {
+                Text("¿Vaciar papelera de la biblioteca '$libraryName'? Se eliminarán definitivamente de la base de datos todos los elementos marcados como no disponibles.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showEmptyTrashDialog = false
+                        viewModel.emptyTrash { res ->
+                            scope.launch {
+                                if (res.isSuccess) {
+                                    snackbarHostState.showSnackbar("Papelera de '$libraryName' vaciada")
+                                } else {
+                                    snackbarHostState.showSnackbar("Error al vaciar: ${res.exceptionOrNull()?.localizedMessage}")
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.empty_trash), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEmptyTrashDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
     Scaffold(
         modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -144,6 +228,13 @@ fun SeriesScreen(
                                 )
                             }
                         }
+                    }
+
+                    IconButton(onClick = { showEmptyTrashDialog = true }) {
+                        Icon(
+                            Icons.Default.DeleteSweep,
+                            contentDescription = stringResource(R.string.empty_trash)
+                        )
                     }
 
                     IconButton(onClick = viewModel::loadSeries) {
@@ -206,6 +297,9 @@ fun SeriesScreen(
                                 onClick = {
                                     val title = series.metadata.title.ifBlank { series.name }
                                     onSeriesClick(series.id, title)
+                                },
+                                onDeleteClick = {
+                                    seriesToDelete = series
                                 }
                             )
                         }
@@ -221,6 +315,7 @@ fun SeriesGridItem(
     series: SeriesDto,
     serverUrl: String,
     onClick: () -> Unit,
+    onDeleteClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val title = series.metadata.title.ifBlank { series.name }
@@ -309,18 +404,50 @@ fun SeriesGridItem(
                 }
             }
 
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(8.dp)
+                    .padding(start = 8.dp, end = 2.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
+
+                var showItemMenu by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(
+                        onClick = { showItemMenu = true },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.MoreVert,
+                            contentDescription = "Opciones",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showItemMenu,
+                        onDismissRequest = { showItemMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.delete_series), color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = {
+                                Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                            },
+                            onClick = {
+                                showItemMenu = false
+                                onDeleteClick()
+                            }
+                        )
+                    }
+                }
             }
         }
     }

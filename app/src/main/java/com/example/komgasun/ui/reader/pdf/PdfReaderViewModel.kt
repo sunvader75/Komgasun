@@ -244,4 +244,11 @@ class PdfReaderViewModel(
         super.onCleared()
         closeRenderer()
     }
+
+    fun deleteBookFile(onDone: (Result<Unit>) -> Unit) {
+        viewModelScope.launch {
+            val result = repository.deleteBookFile(bookId)
+            onDone(result)
+        }
+    }
 }

@@ -55,6 +55,24 @@ class KomgaApiClient(
             .build()
     }
 
+    private fun buildDeleteRequest(url: String, config: ServerConfig): Request {
+        val credential = Credentials.basic(config.username, config.password)
+        return Request.Builder()
+            .url(url)
+            .header("Authorization", credential)
+            .delete()
+            .build()
+    }
+
+    private fun buildPostEmptyBodyRequest(url: String, config: ServerConfig): Request {
+        val credential = Credentials.basic(config.username, config.password)
+        return Request.Builder()
+            .url(url)
+            .header("Authorization", credential)
+            .post(ByteArray(0).toRequestBody(null))
+            .build()
+    }
+
     suspend fun authenticate(config: ServerConfig): Result<UserDto> = withContext(Dispatchers.IO) {
         val baseUrl = config.serverUrl.trim().removeSuffix("/")
 
@@ -280,6 +298,60 @@ class KomgaApiClient(
                 }
 
                 Result.success(destinationFile)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteBookFile(config: ServerConfig, bookId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val baseUrl = config.serverUrl.trim().removeSuffix("/")
+        val url = "$baseUrl/api/v1/books/$bookId/file"
+        val request = buildDeleteRequest(url, config)
+
+        try {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errorBody = response.body?.string().orEmpty()
+                    return@withContext Result.failure(IOException("HTTP ${response.code}: ${response.message} - $errorBody"))
+                }
+                Result.success(Unit)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteSeriesFile(config: ServerConfig, seriesId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val baseUrl = config.serverUrl.trim().removeSuffix("/")
+        val url = "$baseUrl/api/v1/series/$seriesId/file"
+        val request = buildDeleteRequest(url, config)
+
+        try {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errorBody = response.body?.string().orEmpty()
+                    return@withContext Result.failure(IOException("HTTP ${response.code}: ${response.message} - $errorBody"))
+                }
+                Result.success(Unit)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun emptyTrash(config: ServerConfig, libraryId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val baseUrl = config.serverUrl.trim().removeSuffix("/")
+        val url = "$baseUrl/api/v1/libraries/$libraryId/empty-trash"
+        val request = buildPostEmptyBodyRequest(url, config)
+
+        try {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errorBody = response.body?.string().orEmpty()
+                    return@withContext Result.failure(IOException("HTTP ${response.code}: ${response.message} - $errorBody"))
+                }
+                Result.success(Unit)
             }
         } catch (e: Exception) {
             Result.failure(e)

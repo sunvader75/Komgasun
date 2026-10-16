@@ -78,7 +78,7 @@ private fun AppNavigationGraph(startKey: NavKey) {
                     libraryId = key.libraryId,
                     libraryName = key.libraryName,
                     onSeriesClick = { seriesId, seriesTitle ->
-                        backStack.add(BooksNavKey(seriesId, seriesTitle))
+                        backStack.add(BooksNavKey(seriesId, seriesTitle, key.libraryId))
                     },
                     onBack = { backStack.removeLastOrNull() }
                 )
@@ -88,6 +88,7 @@ private fun AppNavigationGraph(startKey: NavKey) {
                 BooksScreen(
                     seriesId = key.seriesId,
                     seriesTitle = key.seriesTitle,
+                    libraryId = key.libraryId,
                     onBookClick = { book ->
                         val title = book.metadata.title.ifBlank { book.name }
                         val readerNavKey: NavKey = when (book.detectBookType()) {

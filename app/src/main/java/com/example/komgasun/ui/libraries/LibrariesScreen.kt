@@ -18,19 +18,28 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -47,6 +56,7 @@ import com.example.komgasun.ui.common.EmptyView
 import com.example.komgasun.ui.common.ErrorView
 import com.example.komgasun.ui.common.FilterChipsRow
 import com.example.komgasun.ui.common.LoadingView
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,13 +68,92 @@ fun LibrariesScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val filteredLibraries = state.libraries.filter { it.matchesFilters(state.selectedFilters) }
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    var libraryToEmptyTrash by remember { mutableStateOf<LibraryDto?>(null) }
+    var showEmptyAllDialog by remember { mutableStateOf(false) }
+
+    if (libraryToEmptyTrash != null) {
+        val target = libraryToEmptyTrash!!
+        AlertDialog(
+            onDismissRequest = { libraryToEmptyTrash = null },
+            title = { Text(stringResource(R.string.empty_trash)) },
+            text = {
+                Text("¿Vaciar papelera de la biblioteca '${target.name}'? Se eliminarán definitivamente de la base de datos de Komga todos los elementos marcados como no disponibles.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        libraryToEmptyTrash = null
+                        viewModel.emptyTrash(target.id) { res ->
+                            scope.launch {
+                                if (res.isSuccess) {
+                                    snackbarHostState.showSnackbar("Papelera de '${target.name}' vaciada")
+                                } else {
+                                    snackbarHostState.showSnackbar("Error al vaciar: ${res.exceptionOrNull()?.localizedMessage}")
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.empty_trash), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { libraryToEmptyTrash = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    if (showEmptyAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showEmptyAllDialog = false },
+            title = { Text(stringResource(R.string.empty_trash_all)) },
+            text = {
+                Text("¿Vaciar la papelera de todas las bibliotecas? Se purgarán permanentemente de la base de datos todos los elementos eliminados o no disponibles.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showEmptyAllDialog = false
+                        viewModel.emptyTrashAll { res ->
+                            scope.launch {
+                                if (res.isSuccess) {
+                                    snackbarHostState.showSnackbar("Todas las papeleras fueron vaciadas")
+                                } else {
+                                    snackbarHostState.showSnackbar("Error al vaciar: ${res.exceptionOrNull()?.localizedMessage}")
+                                }
+                            }
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.empty_trash), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEmptyAllDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
 
     Scaffold(
         modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.libraries)) },
                 actions = {
+                    IconButton(onClick = { showEmptyAllDialog = true }) {
+                        Icon(
+                            Icons.Default.DeleteSweep,
+                            contentDescription = stringResource(R.string.empty_trash_all)
+                        )
+                    }
                     IconButton(onClick = viewModel::loadLibraries) {
                         Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.retry))
                     }
@@ -125,7 +214,8 @@ fun LibrariesScreen(
                         items(filteredLibraries, key = { it.id }) { library ->
                             LibraryItem(
                                 library = library,
-                                onClick = { onLibraryClick(library.id, library.name) }
+                                onClick = { onLibraryClick(library.id, library.name) },
+                                onEmptyTrash = { libraryToEmptyTrash = library }
                             )
                         }
                     }
@@ -139,6 +229,7 @@ fun LibrariesScreen(
 fun LibraryItem(
     library: LibraryDto,
     onClick: () -> Unit,
+    onEmptyTrash: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     ElevatedCard(
@@ -184,6 +275,19 @@ fun LibraryItem(
                     )
                 }
             }
+
+            IconButton(
+                onClick = onEmptyTrash,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DeleteSweep,
+                    contentDescription = stringResource(R.string.empty_trash),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(4.dp))
 
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,

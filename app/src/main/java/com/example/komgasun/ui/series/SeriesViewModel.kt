@@ -100,4 +100,20 @@ class SeriesViewModel(
             }
         }
     }
+
+    fun deleteSeries(seriesId: String, onDone: (Result<Unit>) -> Unit = {}) {
+        viewModelScope.launch {
+            val result = repository.deleteSeriesFile(seriesId)
+            loadSeries()
+            onDone(result)
+        }
+    }
+
+    fun emptyTrash(onDone: (Result<Unit>) -> Unit = {}) {
+        viewModelScope.launch {
+            val result = repository.emptyTrash(libraryId)
+            loadSeries()
+            onDone(result)
+        }
+    }
 }

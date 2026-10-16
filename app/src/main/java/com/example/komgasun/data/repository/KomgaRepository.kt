@@ -112,6 +112,21 @@ class KomgaRepository(
         return apiClient.downloadBookFile(config, bookId, destinationFile, onProgress)
     }
 
+    suspend fun deleteBookFile(bookId: String): Result<Unit> {
+        val config = getActiveConfig() ?: return Result.failure(IOException("Sesión no iniciada"))
+        return apiClient.deleteBookFile(config, bookId)
+    }
+
+    suspend fun deleteSeriesFile(seriesId: String): Result<Unit> {
+        val config = getActiveConfig() ?: return Result.failure(IOException("Sesión no iniciada"))
+        return apiClient.deleteSeriesFile(config, seriesId)
+    }
+
+    suspend fun emptyTrash(libraryId: String): Result<Unit> {
+        val config = getActiveConfig() ?: return Result.failure(IOException("Sesión no iniciada"))
+        return apiClient.emptyTrash(config, libraryId)
+    }
+
     suspend fun getSeriesThumbnailUrl(seriesId: String): String {
         val config = getActiveConfig() ?: return ""
         return KomgaApiClient.getSeriesThumbnailUrl(config.serverUrl, seriesId)

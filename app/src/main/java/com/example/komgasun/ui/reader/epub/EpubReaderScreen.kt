@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.TextDecrease
@@ -74,6 +75,36 @@ fun EpubReaderScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showChapterDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text(stringResource(R.string.delete_file)) },
+            text = {
+                Text("¿Eliminar archivo de este libro EPUB? Se borrará físicamente del servidor y quedará como no disponible hasta vaciar la papelera.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        viewModel.deleteBookFile { res ->
+                            if (res.isSuccess) {
+                                onBack()
+                            }
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
 
     LaunchedEffect(bookId) {
         if (!state.isReady) {
@@ -134,6 +165,12 @@ fun EpubReaderScreen(
                     }
                     IconButton(onClick = { showChapterDialog = true }) {
                         Icon(Icons.AutoMirrored.Filled.FormatListBulleted, contentDescription = "Índice de capítulos")
+                    }
+                    IconButton(onClick = { showDeleteDialog = true }) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = stringResource(R.string.delete_file)
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

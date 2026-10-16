@@ -23,6 +23,7 @@ data class BooksUiState(
 
 class BooksViewModel(
     private val seriesId: String,
+    val libraryId: String = "",
     private val repository: KomgaRepository = KomgasunApp.instance.repository
 ) : ViewModel() {
 
@@ -94,6 +95,34 @@ class BooksViewModel(
                     )
                 }
             }
+        }
+    }
+
+    fun deleteBook(bookId: String, onDone: (Result<Unit>) -> Unit = {}) {
+        viewModelScope.launch {
+            val result = repository.deleteBookFile(bookId)
+            loadBooks()
+            onDone(result)
+        }
+    }
+
+    fun deleteSeries(onDone: (Result<Unit>) -> Unit = {}) {
+        viewModelScope.launch {
+            val result = repository.deleteSeriesFile(seriesId)
+            loadBooks()
+            onDone(result)
+        }
+    }
+
+    fun emptyTrash(onDone: (Result<Unit>) -> Unit = {}) {
+        if (libraryId.isBlank()) {
+            onDone(Result.failure(IllegalStateException("ID de biblioteca no disponible")))
+            return
+        }
+        viewModelScope.launch {
+            val result = repository.emptyTrash(libraryId)
+            loadBooks()
+            onDone(result)
         }
     }
 }

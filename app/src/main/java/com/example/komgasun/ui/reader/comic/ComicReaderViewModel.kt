@@ -118,4 +118,11 @@ class ComicReaderViewModel(
     fun setControlsVisible(visible: Boolean) {
         _uiState.update { it.copy(showControls = visible) }
     }
+
+    fun deleteBookFile(onDone: (Result<Unit>) -> Unit) {
+        viewModelScope.launch {
+            val result = repository.deleteBookFile(bookId)
+            onDone(result)
+        }
+    }
 }

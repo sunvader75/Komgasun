@@ -178,4 +178,11 @@ class EpubReaderViewModel(
     fun toggleTheme() {
         _uiState.update { it.copy(isDarkTheme = !it.isDarkTheme) }
     }
+
+    fun deleteBookFile(onDone: (Result<Unit>) -> Unit) {
+        viewModelScope.launch {
+            val result = repository.deleteBookFile(bookId)
+            onDone(result)
+        }
+    }
 }

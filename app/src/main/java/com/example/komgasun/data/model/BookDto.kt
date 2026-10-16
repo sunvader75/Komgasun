@@ -11,7 +11,16 @@ data class BookDto(
     val number: Int = 0,
     val media: BookMediaDto = BookMediaDto(),
     val metadata: BookMetadataDto = BookMetadataDto(),
+    val readProgress: ReadProgressDto? = null,
+    val deleted: Boolean = false,
     val sizeBytes: Long = 0
+)
+
+@Serializable
+data class ReadProgressDto(
+    val page: Int = 0,
+    val completed: Boolean = false,
+    val readDate: String? = null
 )
 
 @Serializable

@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.komgasun.data.model.ItemFilter
 import com.example.komgasun.data.model.ServerConfig
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -23,6 +24,9 @@ class PreferencesManager(private val context: Context) {
         val KEY_USERNAME = stringPreferencesKey("username")
         val KEY_PASSWORD = stringPreferencesKey("password")
         val KEY_IS_LOGGED_IN = booleanPreferencesKey("is_logged_in")
+        val KEY_LIBRARIES_FILTER = stringPreferencesKey("libraries_filter")
+        val KEY_SERIES_FILTER = stringPreferencesKey("series_filter")
+        val KEY_BOOKS_FILTER = stringPreferencesKey("books_filter")
     }
 
     val serverConfigFlow: Flow<ServerConfig?> = context.dataStore.data
@@ -57,6 +61,36 @@ class PreferencesManager(private val context: Context) {
     val savedUsernameFlow: Flow<String> = context.dataStore.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { it[KEY_USERNAME] ?: "" }
+
+    val librariesFilterFlow: Flow<ItemFilter> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { ItemFilter.fromName(it[KEY_LIBRARIES_FILTER]) }
+
+    val seriesFilterFlow: Flow<ItemFilter> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { ItemFilter.fromName(it[KEY_SERIES_FILTER]) }
+
+    val booksFilterFlow: Flow<ItemFilter> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { ItemFilter.fromName(it[KEY_BOOKS_FILTER]) }
+
+    suspend fun saveLibrariesFilter(filter: ItemFilter) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_LIBRARIES_FILTER] = filter.name
+        }
+    }
+
+    suspend fun saveSeriesFilter(filter: ItemFilter) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_SERIES_FILTER] = filter.name
+        }
+    }
+
+    suspend fun saveBooksFilter(filter: ItemFilter) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_BOOKS_FILTER] = filter.name
+        }
+    }
 
     suspend fun saveCredentials(serverConfig: ServerConfig) {
         val cleanUrl = serverConfig.serverUrl.trim().removeSuffix("/")

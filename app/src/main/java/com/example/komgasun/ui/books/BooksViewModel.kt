@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.komgasun.KomgasunApp
 import com.example.komgasun.data.model.BookDto
+import com.example.komgasun.data.model.ItemFilter
 import com.example.komgasun.data.repository.KomgaRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,6 +15,7 @@ import kotlinx.coroutines.launch
 data class BooksUiState(
     val isLoading: Boolean = false,
     val books: List<BookDto> = emptyList(),
+    val selectedFilter: ItemFilter = ItemFilter.ALL,
     val serverUrl: String = "",
     val errorMessage: String? = null
 )
@@ -28,9 +30,21 @@ class BooksViewModel(
 
     init {
         viewModelScope.launch {
+            repository.preferencesManager.booksFilterFlow.collect { savedFilter ->
+                _uiState.update { it.copy(selectedFilter = savedFilter) }
+            }
+        }
+        viewModelScope.launch {
             val config = repository.getActiveConfig()
             _uiState.update { it.copy(serverUrl = config?.serverUrl.orEmpty()) }
             loadBooks()
+        }
+    }
+
+    fun setFilter(filter: ItemFilter) {
+        _uiState.update { it.copy(selectedFilter = filter) }
+        viewModelScope.launch {
+            repository.preferencesManager.saveBooksFilter(filter)
         }
     }
 

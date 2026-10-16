@@ -40,9 +40,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.komgasun.R
+import com.example.komgasun.data.model.ItemFilter
 import com.example.komgasun.data.model.LibraryDto
+import com.example.komgasun.data.model.matchesFilter
 import com.example.komgasun.ui.common.EmptyView
 import com.example.komgasun.ui.common.ErrorView
+import com.example.komgasun.ui.common.FilterChipsRow
 import com.example.komgasun.ui.common.LoadingView
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -54,6 +57,7 @@ fun LibrariesScreen(
     viewModel: LibrariesViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val filteredLibraries = state.libraries.filter { it.matchesFilter(state.selectedFilter) }
 
     Scaffold(
         modifier = modifier,
@@ -78,36 +82,51 @@ fun LibrariesScreen(
             )
         }
     ) { innerPadding ->
-        when {
-            state.isLoading -> {
-                LoadingView(modifier = Modifier.padding(innerPadding))
-            }
-            state.errorMessage != null -> {
-                ErrorView(
-                    message = state.errorMessage.orEmpty(),
-                    onRetry = viewModel::loadLibraries,
-                    modifier = Modifier.padding(innerPadding)
-                )
-            }
-            state.libraries.isEmpty() -> {
-                EmptyView(
-                    message = stringResource(R.string.empty_libraries),
-                    modifier = Modifier.padding(innerPadding)
-                )
-            }
-            else -> {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(state.libraries, key = { it.id }) { library ->
-                        LibraryItem(
-                            library = library,
-                            onClick = { onLibraryClick(library.id, library.name) }
-                        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            FilterChipsRow(
+                selectedFilter = state.selectedFilter,
+                onFilterSelected = viewModel::setFilter
+            )
+
+            when {
+                state.isLoading -> {
+                    LoadingView(modifier = Modifier.weight(1f))
+                }
+                state.errorMessage != null -> {
+                    ErrorView(
+                        message = state.errorMessage.orEmpty(),
+                        onRetry = viewModel::loadLibraries,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                filteredLibraries.isEmpty() -> {
+                    EmptyView(
+                        message = if (state.libraries.isEmpty()) {
+                            stringResource(R.string.empty_libraries)
+                        } else {
+                            "No hay bibliotecas que coincidan con el filtro seleccionado"
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(filteredLibraries, key = { it.id }) { library ->
+                            LibraryItem(
+                                library = library,
+                                onClick = { onLibraryClick(library.id, library.name) }
+                            )
+                        }
                     }
                 }
             }

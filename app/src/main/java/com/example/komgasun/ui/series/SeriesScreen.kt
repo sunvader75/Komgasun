@@ -46,10 +46,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.komgasun.R
+import com.example.komgasun.data.model.ItemFilter
 import com.example.komgasun.data.model.SeriesDto
+import com.example.komgasun.data.model.matchesFilter
 import com.example.komgasun.data.remote.KomgaApiClient
 import com.example.komgasun.ui.common.EmptyView
 import com.example.komgasun.ui.common.ErrorView
+import com.example.komgasun.ui.common.FilterChipsRow
 import com.example.komgasun.ui.common.LoadingView
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,6 +66,7 @@ fun SeriesScreen(
     viewModel: SeriesViewModel = viewModel(key = libraryId) { SeriesViewModel(libraryId) }
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val filteredSeries = state.seriesList.filter { it.matchesFilter(state.selectedFilter) }
 
     Scaffold(
         modifier = modifier,
@@ -95,42 +99,57 @@ fun SeriesScreen(
             )
         }
     ) { innerPadding ->
-        when {
-            state.isLoading -> {
-                LoadingView(modifier = Modifier.padding(innerPadding))
-            }
-            state.errorMessage != null -> {
-                ErrorView(
-                    message = state.errorMessage.orEmpty(),
-                    onRetry = viewModel::loadSeries,
-                    modifier = Modifier.padding(innerPadding)
-                )
-            }
-            state.seriesList.isEmpty() -> {
-                EmptyView(
-                    message = stringResource(R.string.empty_series),
-                    modifier = Modifier.padding(innerPadding)
-                )
-            }
-            else -> {
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 140.dp),
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
-                    contentPadding = PaddingValues(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    items(state.seriesList, key = { it.id }) { series ->
-                        SeriesGridItem(
-                            series = series,
-                            serverUrl = state.serverUrl,
-                            onClick = {
-                                val title = series.metadata.title.ifBlank { series.name }
-                                onSeriesClick(series.id, title)
-                            }
-                        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            FilterChipsRow(
+                selectedFilter = state.selectedFilter,
+                onFilterSelected = viewModel::setFilter
+            )
+
+            when {
+                state.isLoading -> {
+                    LoadingView(modifier = Modifier.weight(1f))
+                }
+                state.errorMessage != null -> {
+                    ErrorView(
+                        message = state.errorMessage.orEmpty(),
+                        onRetry = viewModel::loadSeries,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                filteredSeries.isEmpty() -> {
+                    EmptyView(
+                        message = if (state.seriesList.isEmpty()) {
+                            stringResource(R.string.empty_series)
+                        } else {
+                            "No hay series que coincidan con el filtro seleccionado"
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                else -> {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 140.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentPadding = PaddingValues(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        items(filteredSeries, key = { it.id }) { series ->
+                            SeriesGridItem(
+                                series = series,
+                                serverUrl = state.serverUrl,
+                                onClick = {
+                                    val title = series.metadata.title.ifBlank { series.name }
+                                    onSeriesClick(series.id, title)
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -190,6 +209,44 @@ fun SeriesGridItem(
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
+                }
+
+                // Read / Availability status badge
+                val statusText: String? = when {
+                    series.deleted || series.unavailable -> "No disponible"
+                    series.booksReadCount == series.booksCount && series.booksCount > 0 -> "Leído"
+                    series.booksInProgressCount > 0 -> "En progreso"
+                    series.booksUnreadCount > 0 && series.booksReadCount == 0 -> "Sin leer"
+                    else -> null
+                }
+
+                if (statusText != null) {
+                    val badgeColor = when (statusText) {
+                        "No disponible" -> MaterialTheme.colorScheme.errorContainer
+                        "Leído" -> MaterialTheme.colorScheme.primaryContainer
+                        "En progreso" -> MaterialTheme.colorScheme.tertiaryContainer
+                        else -> MaterialTheme.colorScheme.surfaceVariant
+                    }
+                    val textColor = when (statusText) {
+                        "No disponible" -> MaterialTheme.colorScheme.onErrorContainer
+                        "Leído" -> MaterialTheme.colorScheme.onPrimaryContainer
+                        "En progreso" -> MaterialTheme.colorScheme.onTertiaryContainer
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+
+                    Surface(
+                        color = badgeColor.copy(alpha = 0.9f),
+                        shape = RoundedCornerShape(bottomEnd = 8.dp),
+                        modifier = Modifier.align(Alignment.TopStart)
+                    ) {
+                        Text(
+                            text = statusText,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = textColor,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
                 }
             }
 

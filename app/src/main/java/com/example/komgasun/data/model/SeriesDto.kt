@@ -8,6 +8,11 @@ data class SeriesDto(
     val libraryId: String,
     val name: String,
     val booksCount: Int = 0,
+    val booksUnreadCount: Int = 0,
+    val booksInProgressCount: Int = 0,
+    val booksReadCount: Int = 0,
+    val deleted: Boolean = false,
+    val unavailable: Boolean = false,
     val metadata: SeriesMetadataDto = SeriesMetadataDto()
 )
 

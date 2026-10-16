@@ -3,6 +3,7 @@ package com.example.komgasun.ui.libraries
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.komgasun.KomgasunApp
+import com.example.komgasun.data.model.ItemFilter
 import com.example.komgasun.data.model.LibraryDto
 import com.example.komgasun.data.repository.KomgaRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,6 +15,7 @@ import kotlinx.coroutines.launch
 data class LibrariesUiState(
     val isLoading: Boolean = false,
     val libraries: List<LibraryDto> = emptyList(),
+    val selectedFilter: ItemFilter = ItemFilter.ALL,
     val errorMessage: String? = null
 )
 
@@ -25,7 +27,19 @@ class LibrariesViewModel(
     val uiState: StateFlow<LibrariesUiState> = _uiState.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            repository.preferencesManager.librariesFilterFlow.collect { savedFilter ->
+                _uiState.update { it.copy(selectedFilter = savedFilter) }
+            }
+        }
         loadLibraries()
+    }
+
+    fun setFilter(filter: ItemFilter) {
+        _uiState.update { it.copy(selectedFilter = filter) }
+        viewModelScope.launch {
+            repository.preferencesManager.saveLibrariesFilter(filter)
+        }
     }
 
     fun loadLibraries() {

@@ -48,11 +48,14 @@ import coil.request.ImageRequest
 import com.example.komgasun.R
 import com.example.komgasun.data.model.BookDto
 import com.example.komgasun.data.model.BookType
+import com.example.komgasun.data.model.ItemFilter
 import com.example.komgasun.data.model.detectBookType
 import com.example.komgasun.data.model.formatBadge
+import com.example.komgasun.data.model.matchesFilter
 import com.example.komgasun.data.remote.KomgaApiClient
 import com.example.komgasun.ui.common.EmptyView
 import com.example.komgasun.ui.common.ErrorView
+import com.example.komgasun.ui.common.FilterChipsRow
 import com.example.komgasun.ui.common.LoadingView
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -66,6 +69,7 @@ fun BooksScreen(
     viewModel: BooksViewModel = viewModel(key = seriesId) { BooksViewModel(seriesId) }
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val filteredBooks = state.books.filter { it.matchesFilter(state.selectedFilter) }
 
     Scaffold(
         modifier = modifier,
@@ -98,39 +102,54 @@ fun BooksScreen(
             )
         }
     ) { innerPadding ->
-        when {
-            state.isLoading -> {
-                LoadingView(modifier = Modifier.padding(innerPadding))
-            }
-            state.errorMessage != null -> {
-                ErrorView(
-                    message = state.errorMessage.orEmpty(),
-                    onRetry = viewModel::loadBooks,
-                    modifier = Modifier.padding(innerPadding)
-                )
-            }
-            state.books.isEmpty() -> {
-                EmptyView(
-                    message = stringResource(R.string.empty_books),
-                    modifier = Modifier.padding(innerPadding)
-                )
-            }
-            else -> {
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 140.dp),
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
-                    contentPadding = PaddingValues(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    items(state.books, key = { it.id }) { book ->
-                        BookGridItem(
-                            book = book,
-                            serverUrl = state.serverUrl,
-                            onClick = { onBookClick(book) }
-                        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            FilterChipsRow(
+                selectedFilter = state.selectedFilter,
+                onFilterSelected = viewModel::setFilter
+            )
+
+            when {
+                state.isLoading -> {
+                    LoadingView(modifier = Modifier.weight(1f))
+                }
+                state.errorMessage != null -> {
+                    ErrorView(
+                        message = state.errorMessage.orEmpty(),
+                        onRetry = viewModel::loadBooks,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                filteredBooks.isEmpty() -> {
+                    EmptyView(
+                        message = if (state.books.isEmpty()) {
+                            stringResource(R.string.empty_books)
+                        } else {
+                            "No hay libros que coincidan con el filtro seleccionado"
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                else -> {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 140.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentPadding = PaddingValues(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        items(filteredBooks, key = { it.id }) { book ->
+                            BookGridItem(
+                                book = book,
+                                serverUrl = state.serverUrl,
+                                onClick = { onBookClick(book) }
+                            )
+                        }
                     }
                 }
             }
@@ -213,6 +232,41 @@ fun BookGridItem(
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                // Top-End Read / Availability status badge
+                val statusText: String? = when {
+                    book.deleted || book.media.status.equals("UNAVAILABLE", true) || book.media.status.equals("ERROR", true) -> "No disp."
+                    book.readProgress?.completed == true -> "Leído"
+                    book.readProgress != null && book.readProgress.page > 0 -> "Pág. ${book.readProgress.page}"
+                    else -> null
+                }
+
+                if (statusText != null) {
+                    val statusBgColor = when (statusText) {
+                        "No disp." -> MaterialTheme.colorScheme.errorContainer
+                        "Leído" -> MaterialTheme.colorScheme.primaryContainer
+                        else -> MaterialTheme.colorScheme.tertiaryContainer
+                    }
+                    val statusTextColor = when (statusText) {
+                        "No disp." -> MaterialTheme.colorScheme.onErrorContainer
+                        "Leído" -> MaterialTheme.colorScheme.onPrimaryContainer
+                        else -> MaterialTheme.colorScheme.onTertiaryContainer
+                    }
+
+                    Surface(
+                        color = statusBgColor.copy(alpha = 0.9f),
+                        shape = RoundedCornerShape(bottomStart = 8.dp),
+                        modifier = Modifier.align(Alignment.TopEnd)
+                    ) {
+                        Text(
+                            text = statusText,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = statusTextColor,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }

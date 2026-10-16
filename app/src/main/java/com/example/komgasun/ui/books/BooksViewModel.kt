@@ -18,6 +18,7 @@ data class BooksUiState(
     val books: List<BookDto> = emptyList(),
     val selectedFilters: Set<ItemFilter> = emptySet(),
     val serverUrl: String = "",
+    val updatingReadStatus: Set<String> = emptySet(),
     val errorMessage: String? = null
 )
 
@@ -94,6 +95,30 @@ class BooksViewModel(
                         errorMessage = error.localizedMessage ?: "Error al cargar libros"
                     )
                 }
+            }
+        }
+    }
+
+    fun setBookReadStatus(book: BookDto, completed: Boolean, onDone: (Result<Unit>) -> Unit = {}) {
+        if (book.id in _uiState.value.updatingReadStatus) return
+        _uiState.update { it.copy(updatingReadStatus = it.updatingReadStatus + book.id) }
+        viewModelScope.launch {
+            try {
+                val result = repository.setBookReadStatus(book, completed)
+                result.onSuccess {
+                    val progress = com.example.komgasun.data.model.ReadProgressDto(
+                        page = if (completed) book.media.pagesCount else 0,
+                        completed = completed
+                    )
+                    _uiState.update { state ->
+                        state.copy(books = state.books.map {
+                            if (it.id == book.id) it.copy(readProgress = progress) else it
+                        })
+                    }
+                }
+                onDone(result)
+            } finally {
+                _uiState.update { it.copy(updatingReadStatus = it.updatingReadStatus - book.id) }
             }
         }
     }

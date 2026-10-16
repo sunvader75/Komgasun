@@ -321,7 +321,18 @@ fun BooksScreen(
                                 book = book,
                                 serverUrl = state.serverUrl,
                                 onClick = { onBookClick(book) },
-                                onDeleteClick = { bookToDelete = book }
+                                onDeleteClick = { bookToDelete = book },
+                                readStatusUpdating = book.id in state.updatingReadStatus,
+                                onReadStatusClick = { completed ->
+                                    viewModel.setBookReadStatus(book, completed) { result ->
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                if (result.isSuccess) "Estado sincronizado con Komga"
+                                                else "No se pudo sincronizar: ${result.exceptionOrNull()?.localizedMessage}"
+                                            )
+                                        }
+                                    }
+                                }
                             )
                         }
                     }
@@ -337,7 +348,9 @@ fun BookGridItem(
     serverUrl: String,
     onClick: () -> Unit,
     onDeleteClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    readStatusUpdating: Boolean = false,
+    onReadStatusClick: (Boolean) -> Unit = {}
 ) {
     val title = book.metadata.title.ifBlank { book.name }
     val thumbnailUrl = if (serverUrl.isNotBlank()) {
@@ -490,6 +503,22 @@ fun BookGridItem(
                         expanded = showItemMenu,
                         onDismissRequest = { showItemMenu = false }
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("Marcar como leído") },
+                            enabled = !readStatusUpdating,
+                            onClick = {
+                                showItemMenu = false
+                                onReadStatusClick(true)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Marcar como no leído") },
+                            enabled = !readStatusUpdating,
+                            onClick = {
+                                showItemMenu = false
+                                onReadStatusClick(false)
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.delete_file), color = MaterialTheme.colorScheme.error) },
                             leadingIcon = {

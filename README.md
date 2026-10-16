@@ -15,6 +15,7 @@ Komgasun está basada en [Komelia](https://github.com/Snd-R/Komelia), de [Snd-R]
 - Lector PDF con páginas servidas por Komga y opción de descargar el documento para renderizarlo en el dispositivo.
 - Lector EPUB con índice de capítulos, tamaño de texto ajustable y tema claro u oscuro.
 - Sincronización del progreso de lectura con Komga.
+- Marcar cómics y libros como leídos o no leídos desde el menú ⋮ de cada portada. «Marcar como no leído» reinicia el progreso en Komga. Se necesita conexión: el estado cambia al confirmar el servidor y, si falla, se muestra un error.
 - Configuración de una dirección local y otra remota, con cambio manual entre ambas.
 - Acciones de eliminación de archivos y series y vaciado de papelera, sujetas a los permisos del servidor.
 

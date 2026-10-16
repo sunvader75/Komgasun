@@ -234,6 +234,28 @@ class KomgaApiClient(
         }
     }
 
+    suspend fun setBookReadStatus(
+        config: ServerConfig,
+        bookId: String,
+        completed: Boolean
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        val baseUrl = config.serverUrl.trim().removeSuffix("/")
+        val url = "$baseUrl/api/v1/books/$bookId/read-progress"
+        val request = if (completed) {
+            buildJsonPatchRequest(url, config, json.encodeToString(ReadProgressUpdatePayload(completed = true)))
+        } else {
+            buildDeleteRequest(url, config)
+        }
+        try {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) Result.success(Unit)
+                else Result.failure(IOException("HTTP ${response.code}: ${response.message}"))
+            }
+        } catch (e: IOException) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun getBookPages(config: ServerConfig, bookId: String): Result<List<BookPageDto>> = withContext(Dispatchers.IO) {
         val baseUrl = config.serverUrl.trim().removeSuffix("/")
         val url = "$baseUrl/api/v1/books/$bookId/pages"

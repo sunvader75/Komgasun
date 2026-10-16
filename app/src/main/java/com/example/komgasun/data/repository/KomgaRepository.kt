@@ -112,6 +112,19 @@ class KomgaRepository(
         return apiClient.updateReadProgress(config, bookId, page, completed)
     }
 
+    suspend fun setBookReadStatus(book: BookDto, completed: Boolean): Result<Unit> {
+        val config = getActiveConfig() ?: return Result.failure(IOException("Sesión no iniciada"))
+        val result = apiClient.setBookReadStatus(config, book.id, completed)
+        if (result.isSuccess) {
+            val progress = ReadProgressDto(
+                page = if (completed) book.media.pagesCount else 0,
+                completed = completed
+            )
+            _recentProgress.update { it + (book.id to progress) }
+        }
+        return result
+    }
+
     suspend fun getBookPages(bookId: String): Result<List<BookPageDto>> {
         val config = getActiveConfig() ?: return Result.failure(IOException("Sesión no iniciada"))
         return apiClient.getBookPages(config, bookId)

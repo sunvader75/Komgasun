@@ -28,6 +28,7 @@ data class PdfReaderUiState(
     val isLoading: Boolean = false,
     val downloadProgress: Float? = null,
     val streamPages: List<BookPageDto> = emptyList(),
+    val initialPage: Int = 0,
     val serverUrl: String = "",
     val mode: PdfSourceMode = PdfSourceMode.StreamFromKomga,
     val showControls: Boolean = true,
@@ -46,6 +47,7 @@ class PdfReaderViewModel(
     private var pdfRenderer: PdfRenderer? = null
     private var pfd: ParcelFileDescriptor? = null
     private val bitmapCache = mutableMapOf<Int, Bitmap>()
+    private var lastSyncedPage: Int = -1
 
     init {
         viewModelScope.launch {
@@ -56,11 +58,21 @@ class PdfReaderViewModel(
     }
 
     fun initReader() {
-        val cachedPdf = getLocalPdfFile()
-        if (cachedPdf.exists() && cachedPdf.length() > 0) {
-            setupNativeRenderer(cachedPdf)
-        } else {
-            loadStreamPages()
+        viewModelScope.launch {
+            val bookResult = repository.getBook(bookId)
+            val readProgress = bookResult.getOrNull()?.readProgress
+            val isCompleted = readProgress?.completed == true
+            val savedPage = readProgress?.page ?: 1
+            val initialPageIndex = if (isCompleted) 0 else (savedPage - 1).coerceAtLeast(0)
+            lastSyncedPage = initialPageIndex + 1
+            _uiState.update { it.copy(initialPage = initialPageIndex) }
+
+            val cachedPdf = getLocalPdfFile()
+            if (cachedPdf.exists() && cachedPdf.length() > 0) {
+                setupNativeRenderer(cachedPdf)
+            } else {
+                loadStreamPages()
+            }
         }
     }
 
@@ -75,8 +87,14 @@ class PdfReaderViewModel(
         viewModelScope.launch {
             val result = repository.getBookPages(bookId)
             result.onSuccess { pages ->
+                val validInitialPage = _uiState.value.initialPage.coerceIn(0, (pages.size - 1).coerceAtLeast(0))
                 _uiState.update {
-                    it.copy(isLoading = false, streamPages = pages, mode = PdfSourceMode.StreamFromKomga)
+                    it.copy(
+                        isLoading = false,
+                        streamPages = pages,
+                        initialPage = validInitialPage,
+                        mode = PdfSourceMode.StreamFromKomga
+                    )
                 }
             }.onFailure { error ->
                 _uiState.update {
@@ -123,9 +141,11 @@ class PdfReaderViewModel(
             pfd = descriptor
             val renderer = PdfRenderer(descriptor)
             pdfRenderer = renderer
+            val validInitialPage = _uiState.value.initialPage.coerceIn(0, (renderer.pageCount - 1).coerceAtLeast(0))
             _uiState.update {
                 it.copy(
                     isLoading = false,
+                    initialPage = validInitialPage,
                     mode = PdfSourceMode.NativeRenderer(renderer.pageCount)
                 )
             }
@@ -136,6 +156,27 @@ class PdfReaderViewModel(
                     errorMessage = "Error al abrir el renderizador de PDF: ${e.localizedMessage}"
                 )
             }
+        }
+    }
+
+    fun onPageChanged(pageIndex: Int, totalPages: Int) {
+        val pageNumber = pageIndex + 1
+        if (pageNumber == lastSyncedPage) return
+        lastSyncedPage = pageNumber
+
+        val isCompleted = pageNumber >= totalPages && totalPages > 0
+        repository.syncReadProgressAsync(bookId = bookId, page = pageNumber, completed = isCompleted)
+    }
+
+    fun flushProgress() {
+        val total = when (val mode = _uiState.value.mode) {
+            is PdfSourceMode.NativeRenderer -> mode.totalPages
+            is PdfSourceMode.StreamFromKomga -> _uiState.value.streamPages.size
+        }
+        val pageNumber = _uiState.value.initialPage + 1
+        if (total > 0 && pageNumber in 1..total) {
+            val isCompleted = pageNumber >= total
+            repository.syncReadProgressAsync(bookId = bookId, page = pageNumber, completed = isCompleted)
         }
     }
 

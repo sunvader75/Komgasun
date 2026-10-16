@@ -40,6 +40,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -72,6 +74,16 @@ fun EpubReaderScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showChapterDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(bookId) {
+        viewModel.initEpub()
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.flushProgress()
+        }
+    }
 
     Scaffold(
         modifier = modifier,
@@ -221,7 +233,7 @@ fun EpubReaderScreen(
                 state.errorMessage != null -> {
                     ErrorView(
                         message = state.errorMessage.orEmpty(),
-                        onRetry = viewModel::loadEpub,
+                        onRetry = viewModel::initEpub,
                         modifier = Modifier.fillMaxSize()
                     )
                 }

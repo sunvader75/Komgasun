@@ -8,8 +8,17 @@ import com.example.komgasun.data.model.SeriesDto
 import com.example.komgasun.data.model.ServerConfig
 import com.example.komgasun.data.model.UserDto
 import com.example.komgasun.data.remote.KomgaApiClient
+import com.example.komgasun.data.model.ReadProgressDto
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.IOException
 
@@ -17,6 +26,10 @@ class KomgaRepository(
     val preferencesManager: PreferencesManager,
     val apiClient: KomgaApiClient = KomgaApiClient()
 ) {
+
+    private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val _recentProgress = MutableStateFlow<Map<String, ReadProgressDto>>(emptyMap())
+    val recentProgress: StateFlow<Map<String, ReadProgressDto>> = _recentProgress.asStateFlow()
 
     val serverConfigFlow: Flow<ServerConfig?> = preferencesManager.serverConfigFlow
 
@@ -46,7 +59,40 @@ class KomgaRepository(
 
     suspend fun getBooks(seriesId: String): Result<List<BookDto>> {
         val config = getActiveConfig() ?: return Result.failure(IOException("Sesión no iniciada"))
-        return apiClient.getBooks(config, seriesId)
+        val result = apiClient.getBooks(config, seriesId)
+        return result.map { list ->
+            val overrides = _recentProgress.value
+            if (overrides.isEmpty()) list else {
+                list.map { book ->
+                    val override = overrides[book.id]
+                    if (override != null) book.copy(readProgress = override) else book
+                }
+            }
+        }
+    }
+
+    suspend fun getBook(bookId: String): Result<BookDto> {
+        val config = getActiveConfig() ?: return Result.failure(IOException("Sesión no iniciada"))
+        val result = apiClient.getBook(config, bookId)
+        return result.map { book ->
+            val override = _recentProgress.value[bookId]
+            if (override != null) book.copy(readProgress = override) else book
+        }
+    }
+
+    fun syncReadProgressAsync(bookId: String, page: Int, completed: Boolean) {
+        val updated = ReadProgressDto(page = page, completed = completed)
+        _recentProgress.update { it + (bookId to updated) }
+        repoScope.launch {
+            updateReadProgress(bookId, page, completed)
+        }
+    }
+
+    suspend fun updateReadProgress(bookId: String, page: Int, completed: Boolean): Result<Unit> {
+        val updated = ReadProgressDto(page = page, completed = completed)
+        _recentProgress.update { it + (bookId to updated) }
+        val config = getActiveConfig() ?: return Result.failure(IOException("Sesión no iniciada"))
+        return apiClient.updateReadProgress(config, bookId, page, completed)
     }
 
     suspend fun getBookPages(bookId: String): Result<List<BookPageDto>> {

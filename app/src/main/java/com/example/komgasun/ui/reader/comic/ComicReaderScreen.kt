@@ -33,6 +33,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -70,6 +71,16 @@ fun ComicReaderScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
+    LaunchedEffect(bookId) {
+        viewModel.loadPages()
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.flushProgress()
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -102,11 +113,22 @@ fun ComicReaderScreen(
             }
             else -> {
                 val pages = state.pages
-                val pagerState = rememberPagerState(pageCount = { pages.size })
-                var sliderValue by remember { mutableFloatStateOf(0f) }
+                val pagerState = rememberPagerState(
+                    initialPage = state.initialPage,
+                    pageCount = { pages.size }
+                )
+                var sliderValue by remember(state.initialPage) { mutableFloatStateOf(state.initialPage.toFloat()) }
+
+                LaunchedEffect(state.initialPage) {
+                    if (state.initialPage in 0 until pages.size && pagerState.currentPage != state.initialPage) {
+                        pagerState.scrollToPage(state.initialPage)
+                        sliderValue = state.initialPage.toFloat()
+                    }
+                }
 
                 LaunchedEffect(pagerState.currentPage) {
                     sliderValue = pagerState.currentPage.toFloat()
+                    viewModel.onPageChanged(pagerState.currentPage, pages.size)
                 }
 
                 HorizontalPager(

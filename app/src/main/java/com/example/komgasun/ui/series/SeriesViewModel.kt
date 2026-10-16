@@ -48,8 +48,10 @@ class SeriesViewModel(
         }
     }
 
-    fun loadSeries() {
-        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+    fun loadSeries(showLoading: Boolean = _uiState.value.seriesList.isEmpty()) {
+        if (showLoading) {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        }
         viewModelScope.launch {
             val result = repository.getSeries(libraryId)
             result.onSuccess { list ->

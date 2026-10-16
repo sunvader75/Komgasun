@@ -35,9 +35,23 @@ class BooksViewModel(
             }
         }
         viewModelScope.launch {
+            repository.recentProgress.collect { overrides ->
+                if (overrides.isNotEmpty()) {
+                    _uiState.update { current ->
+                        current.copy(
+                            books = current.books.map { book ->
+                                val override = overrides[book.id]
+                                if (override != null) book.copy(readProgress = override) else book
+                            }
+                        )
+                    }
+                }
+            }
+        }
+        viewModelScope.launch {
             val config = repository.getActiveConfig()
             _uiState.update { it.copy(serverUrl = config?.serverUrl.orEmpty()) }
-            loadBooks()
+            loadBooks(showLoading = true)
         }
     }
 
@@ -48,8 +62,10 @@ class BooksViewModel(
         }
     }
 
-    fun loadBooks() {
-        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+    fun loadBooks(showLoading: Boolean = _uiState.value.books.isEmpty()) {
+        if (showLoading) {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        }
         viewModelScope.launch {
             val result = repository.getBooks(seriesId)
             result.onSuccess { list ->

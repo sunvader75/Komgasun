@@ -9,10 +9,14 @@ import com.example.komgasun.data.model.ServerConfig
 import com.example.komgasun.data.model.UserDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.Credentials
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -37,6 +41,17 @@ class KomgaApiClient(
         return Request.Builder()
             .url(url)
             .header("Authorization", credential)
+            .build()
+    }
+
+    private fun buildJsonPatchRequest(url: String, config: ServerConfig, jsonBody: String): Request {
+        val credential = Credentials.basic(config.username, config.password)
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val body = jsonBody.toRequestBody(mediaType)
+        return Request.Builder()
+            .url(url)
+            .header("Authorization", credential)
+            .patch(body)
             .build()
     }
 
@@ -144,6 +159,59 @@ class KomgaApiClient(
                 Result.success(page.content)
             }
         } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getBook(config: ServerConfig, bookId: String): Result<BookDto> = withContext(Dispatchers.IO) {
+        val baseUrl = config.serverUrl.trim().removeSuffix("/")
+        val url = "$baseUrl/api/v1/books/$bookId"
+        val request = buildRequest(url, config)
+
+        try {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(IOException("HTTP ${response.code}: ${response.message}"))
+                }
+                val body = response.body?.string().orEmpty()
+                val book = json.decodeFromString<BookDto>(body)
+                Result.success(book)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    @Serializable
+    private data class ReadProgressUpdatePayload(
+        val page: Int,
+        val completed: Boolean
+    )
+
+    suspend fun updateReadProgress(
+        config: ServerConfig,
+        bookId: String,
+        page: Int,
+        completed: Boolean
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        val baseUrl = config.serverUrl.trim().removeSuffix("/")
+        val url = "$baseUrl/api/v1/books/$bookId/read-progress"
+        val payload = ReadProgressUpdatePayload(page = page, completed = completed)
+        val payloadJson = json.encodeToString(payload)
+        val request = buildJsonPatchRequest(url, config, payloadJson)
+
+        try {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errorBody = response.body?.string().orEmpty()
+                    android.util.Log.e("KomgaApiClient", "PATCH read-progress HTTP ${response.code}: $errorBody")
+                    return@withContext Result.failure(IOException("HTTP ${response.code}: ${response.message} - $errorBody"))
+                }
+                android.util.Log.d("KomgaApiClient", "PATCH read-progress OK: bookId=$bookId, page=$page, completed=$completed (code=${response.code})")
+                Result.success(Unit)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("KomgaApiClient", "PATCH read-progress error: bookId=$bookId", e)
             Result.failure(e)
         }
     }

@@ -41,6 +41,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
@@ -67,6 +68,11 @@ fun SeriesScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val filteredSeries = state.seriesList.filter { it.matchesFilter(state.selectedFilter) }
+
+    LifecycleResumeEffect(libraryId) {
+        viewModel.loadSeries(showLoading = false)
+        onPauseOrDispose { }
+    }
 
     Scaffold(
         modifier = modifier,

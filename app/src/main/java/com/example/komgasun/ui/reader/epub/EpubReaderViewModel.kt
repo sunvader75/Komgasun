@@ -32,9 +32,23 @@ class EpubReaderViewModel(
 
     private val _uiState = MutableStateFlow(EpubReaderUiState())
     val uiState: StateFlow<EpubReaderUiState> = _uiState.asStateFlow()
+    private var lastSyncedChapter: Int = -1
+    private var initialChapterIndex: Int = 0
 
     init {
-        loadEpub()
+        initEpub()
+    }
+
+    fun initEpub() {
+        viewModelScope.launch {
+            val bookResult = repository.getBook(bookId)
+            val readProgress = bookResult.getOrNull()?.readProgress
+            val isCompleted = readProgress?.completed == true
+            val savedPage = readProgress?.page ?: 1
+            initialChapterIndex = if (isCompleted) 0 else (savedPage - 1).coerceAtLeast(0)
+            lastSyncedChapter = initialChapterIndex + 1
+            loadEpub()
+        }
     }
 
     private fun getLocalEpubFile(): File {
@@ -84,11 +98,13 @@ class EpubReaderViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val book = EpubParser.parse(file)
+                val targetIndex = initialChapterIndex.coerceIn(0, (book.chapters.size - 1).coerceAtLeast(0))
+                lastSyncedChapter = targetIndex + 1
                 _uiState.update {
                     it.copy(
                         isLoading = false,
                         epubBook = book,
-                        currentChapterIndex = 0
+                        currentChapterIndex = targetIndex
                     )
                 }
             } catch (e: Exception) {
@@ -106,6 +122,25 @@ class EpubReaderViewModel(
         val count = _uiState.value.epubBook?.chapters?.size ?: 0
         if (index in 0 until count) {
             _uiState.update { it.copy(currentChapterIndex = index) }
+            syncProgress(index, count)
+        }
+    }
+
+    private fun syncProgress(chapterIndex: Int, totalChapters: Int) {
+        val chapterNumber = chapterIndex + 1
+        if (chapterNumber == lastSyncedChapter) return
+        lastSyncedChapter = chapterNumber
+
+        val isCompleted = chapterNumber >= totalChapters && totalChapters > 0
+        repository.syncReadProgressAsync(bookId = bookId, page = chapterNumber, completed = isCompleted)
+    }
+
+    fun flushProgress() {
+        val total = _uiState.value.epubBook?.chapters?.size ?: 0
+        val chapterNumber = _uiState.value.currentChapterIndex + 1
+        if (total > 0 && chapterNumber in 1..total) {
+            val isCompleted = chapterNumber >= total
+            repository.syncReadProgressAsync(bookId = bookId, page = chapterNumber, completed = isCompleted)
         }
     }
 

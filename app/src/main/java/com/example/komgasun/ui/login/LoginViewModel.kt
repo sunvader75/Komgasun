@@ -55,7 +55,7 @@ class LoginViewModel(
 
     fun login(onSuccess: () -> Unit) {
         val state = _uiState.value
-        val cleanUrl = state.serverUrl.trim()
+        var cleanUrl = state.serverUrl.trim().removeSuffix("/")
         val username = state.username.trim()
         val password = state.password
 
@@ -64,8 +64,7 @@ class LoginViewModel(
             return
         }
         if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
-            _uiState.update { it.copy(errorMessage = "La URL debe comenzar con http:// o https://") }
-            return
+            cleanUrl = "http://$cleanUrl"
         }
         if (username.isBlank()) {
             _uiState.update { it.copy(errorMessage = "Introduce el nombre de usuario") }

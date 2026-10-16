@@ -42,29 +42,50 @@ class KomgaApiClient(
 
     suspend fun authenticate(config: ServerConfig): Result<UserDto> = withContext(Dispatchers.IO) {
         val baseUrl = config.serverUrl.trim().removeSuffix("/")
-        val request = buildRequest("$baseUrl/api/v1/users/me", config)
 
-        try {
-            okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    val code = response.code
-                    return@withContext Result.failure(
-                        IOException(
-                            when (code) {
-                                401 -> "Credenciales inválidas (401)"
-                                403 -> "Acceso denegado (403)"
-                                404 -> "Servidor o ruta no encontrada (404)"
-                                else -> "Error del servidor: HTTP $code"
-                            }
-                        )
-                    )
+        // Komga moved users API from v1 to v2 (/api/v2/users/me).
+        // We try v2 first, then fall back to v1, and finally test /api/v1/libraries as safeguard.
+        val endpointsToTry = listOf(
+            "$baseUrl/api/v2/users/me",
+            "$baseUrl/api/v1/users/me"
+        )
+
+        for (endpoint in endpointsToTry) {
+            val request = buildRequest(endpoint, config)
+            try {
+                okHttpClient.newCall(request).execute().use { response ->
+                    when (response.code) {
+                        200 -> {
+                            val body = response.body?.string() ?: return@withContext Result.failure(
+                                IOException("Respuesta vacía del servidor")
+                            )
+                            val user = json.decodeFromString<UserDto>(body)
+                            return@withContext Result.success(user)
+                        }
+                        401 -> return@withContext Result.failure(IOException("Credenciales inválidas (401)"))
+                        403 -> return@withContext Result.failure(IOException("Acceso denegado (403)"))
+                        404 -> {
+                            // Endpoint not found on this version, try next fallback
+                        }
+                        else -> return@withContext Result.failure(IOException("Error del servidor: HTTP ${response.code}"))
+                    }
                 }
+            } catch (e: Exception) {
+                return@withContext Result.failure(e)
+            }
+        }
 
-                val body = response.body?.string() ?: return@withContext Result.failure(
-                    IOException("Respuesta vacía del servidor")
-                )
-                val user = json.decodeFromString<UserDto>(body)
-                Result.success(user)
+        // Final fallback: check if /api/v1/libraries responds with 200 (proves valid auth & Komga server)
+        val librariesFallbackUrl = "$baseUrl/api/v1/libraries"
+        try {
+            okHttpClient.newCall(buildRequest(librariesFallbackUrl, config)).execute().use { response ->
+                when (response.code) {
+                    200 -> Result.success(UserDto(id = "me", email = config.username))
+                    401 -> Result.failure(IOException("Credenciales inválidas (401)"))
+                    403 -> Result.failure(IOException("Acceso denegado (403)"))
+                    404 -> Result.failure(IOException("Servidor o ruta no encontrada (404). Verificá la URL ingresada."))
+                    else -> Result.failure(IOException("Error del servidor: HTTP ${response.code}"))
+                }
             }
         } catch (e: Exception) {
             Result.failure(e)

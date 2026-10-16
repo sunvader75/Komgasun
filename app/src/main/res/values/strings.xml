@@ -32,4 +32,16 @@
     <string name="empty_trash">Vaciar papelera</string>
     <string name="empty_trash_all">Vaciar todas las papeleras</string>
     <string name="cancel">Cancelar</string>
+    <string name="save">Guardar</string>
+    <string name="server_type_local">Local (WiFi)</string>
+    <string name="server_type_remote">Tailscale (Remoto)</string>
+    <string name="server_type_local_hint">http://192.168.1.100:25600</string>
+    <string name="server_type_remote_hint">http://100.x.y.z:25600</string>
+    <string name="switch_server">Alternar servidor</string>
+    <string name="switch_server_title">Servidor Komga</string>
+    <string name="switch_server_current">Conexión activa:</string>
+    <string name="switch_to_server">Cambiar a %1$s</string>
+    <string name="server_switched_success">Cambiado a %1$s (%2$s)</string>
+    <string name="configure_servers">Configurar direcciones</string>
+    <string name="server_not_configured">Sin configurar</string>
 </resources>

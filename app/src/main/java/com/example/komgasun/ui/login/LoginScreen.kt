@@ -3,6 +3,7 @@ package com.example.komgasun.ui.login
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,10 +23,13 @@ import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.VpnKey
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.komgasun.R
+import com.example.komgasun.data.model.ServerType
 
 @Composable
 fun LoginScreen(
@@ -95,7 +100,7 @@ fun LoginScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -110,13 +115,79 @@ fun LoginScreen(
                         .padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    Text(
+                        text = "Tipo de conexión:",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = state.activeServerType == ServerType.LOCAL,
+                            onClick = { viewModel.onServerTypeSelect(ServerType.LOCAL) },
+                            label = { Text(stringResource(R.string.server_type_local)) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Wifi,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilterChip(
+                            selected = state.activeServerType == ServerType.REMOTE,
+                            onClick = { viewModel.onServerTypeSelect(ServerType.REMOTE) },
+                            label = { Text(stringResource(R.string.server_type_remote)) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.VpnKey,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
                     OutlinedTextField(
                         value = state.serverUrl,
                         onValueChange = viewModel::onServerUrlChange,
-                        label = { Text(stringResource(R.string.server_url)) },
-                        placeholder = { Text(stringResource(R.string.server_url_hint)) },
+                        label = {
+                            Text(
+                                if (state.activeServerType == ServerType.LOCAL) {
+                                    stringResource(R.string.server_url) + " - Local"
+                                } else {
+                                    stringResource(R.string.server_url) + " - Tailscale"
+                                }
+                            )
+                        },
+                        placeholder = {
+                            Text(
+                                if (state.activeServerType == ServerType.LOCAL) {
+                                    stringResource(R.string.server_type_local_hint)
+                                } else {
+                                    stringResource(R.string.server_type_remote_hint)
+                                }
+                            )
+                        },
                         leadingIcon = {
-                            Icon(Icons.Default.Dns, contentDescription = null)
+                            Icon(
+                                imageVector = if (state.activeServerType == ServerType.LOCAL) Icons.Default.Wifi else Icons.Default.VpnKey,
+                                contentDescription = null
+                            )
+                        },
+                        supportingText = {
+                            Text(
+                                if (state.activeServerType == ServerType.LOCAL) {
+                                    "IP en red local WiFi (casa)"
+                                } else {
+                                    "IP o nombre Tailscale (fuera de casa)"
+                                }
+                            )
                         },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(

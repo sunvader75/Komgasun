@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.komgasun.KomgasunApp
 import com.example.komgasun.data.model.ServerConfig
+import com.example.komgasun.data.model.ServerType
 import com.example.komgasun.data.repository.KomgaRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,6 +15,9 @@ import kotlinx.coroutines.launch
 
 data class LoginUiState(
     val serverUrl: String = "",
+    val localUrl: String = "",
+    val remoteUrl: String = "",
+    val activeServerType: ServerType = ServerType.LOCAL,
     val username: String = "",
     val password: String = "",
     val isLoading: Boolean = false,
@@ -30,19 +34,51 @@ class LoginViewModel(
 
     init {
         viewModelScope.launch {
-            val savedUrl = repository.preferencesManager.savedUrlFlow.firstOrNull() ?: ""
+            val local = repository.preferencesManager.localUrlFlow.firstOrNull() ?: ""
+            val remote = repository.preferencesManager.remoteUrlFlow.firstOrNull() ?: ""
+            val activeType = repository.preferencesManager.activeServerTypeFlow.firstOrNull() ?: ServerType.LOCAL
             val savedUsername = repository.preferencesManager.savedUsernameFlow.firstOrNull() ?: ""
+            val defaultLocal = local.ifBlank { "http://192.168.1.100:25600" }
+            val currentUrl = if (activeType == ServerType.REMOTE) remote else defaultLocal
+
             _uiState.update {
                 it.copy(
-                    serverUrl = savedUrl.ifBlank { "http://192.168.1.100:25600" },
+                    serverUrl = currentUrl,
+                    localUrl = defaultLocal,
+                    remoteUrl = remote,
+                    activeServerType = activeType,
                     username = savedUsername
                 )
             }
         }
     }
 
+    fun onServerTypeSelect(type: ServerType) {
+        _uiState.update { current ->
+            val updatedLocal = if (current.activeServerType == ServerType.LOCAL) current.serverUrl else current.localUrl
+            val updatedRemote = if (current.activeServerType == ServerType.REMOTE) current.serverUrl else current.remoteUrl
+            val newActiveUrl = if (type == ServerType.REMOTE) updatedRemote else updatedLocal
+            current.copy(
+                activeServerType = type,
+                serverUrl = newActiveUrl,
+                localUrl = updatedLocal,
+                remoteUrl = updatedRemote,
+                errorMessage = null
+            )
+        }
+    }
+
     fun onServerUrlChange(url: String) {
-        _uiState.update { it.copy(serverUrl = url, errorMessage = null) }
+        _uiState.update { current ->
+            val updatedLocal = if (current.activeServerType == ServerType.LOCAL) url else current.localUrl
+            val updatedRemote = if (current.activeServerType == ServerType.REMOTE) url else current.remoteUrl
+            current.copy(
+                serverUrl = url,
+                localUrl = updatedLocal,
+                remoteUrl = updatedRemote,
+                errorMessage = null
+            )
+        }
     }
 
     fun onUsernameChange(username: String) {
@@ -63,13 +99,15 @@ class LoginViewModel(
             _uiState.update { it.copy(errorMessage = "Introduce la URL del servidor") }
             return
         }
-        if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+        if (!cleanUrl.startsWith("http://", ignoreCase = true) && !cleanUrl.startsWith("https://", ignoreCase = true)) {
             cleanUrl = "http://$cleanUrl"
         }
         if (username.isBlank()) {
             _uiState.update { it.copy(errorMessage = "Introduce el nombre de usuario") }
             return
         }
+
+        val otherUrl = if (state.activeServerType == ServerType.LOCAL) state.remoteUrl else state.localUrl
 
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
 
@@ -79,7 +117,7 @@ class LoginViewModel(
                 username = username,
                 password = password
             )
-            val result = repository.login(config)
+            val result = repository.login(config, state.activeServerType, otherUrl)
             result.onSuccess {
                 _uiState.update { it.copy(isLoading = false, isSuccess = true) }
                 onSuccess()

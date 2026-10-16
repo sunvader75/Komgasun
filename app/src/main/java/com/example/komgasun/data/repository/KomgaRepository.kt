@@ -9,6 +9,7 @@ import com.example.komgasun.data.model.ServerConfig
 import com.example.komgasun.data.model.UserDto
 import com.example.komgasun.data.remote.KomgaApiClient
 import com.example.komgasun.data.model.ReadProgressDto
+import com.example.komgasun.data.model.ServerType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,16 +33,29 @@ class KomgaRepository(
     val recentProgress: StateFlow<Map<String, ReadProgressDto>> = _recentProgress.asStateFlow()
 
     val serverConfigFlow: Flow<ServerConfig?> = preferencesManager.serverConfigFlow
+    val activeServerTypeFlow: Flow<ServerType> = preferencesManager.activeServerTypeFlow
+    val localUrlFlow: Flow<String> = preferencesManager.localUrlFlow
+    val remoteUrlFlow: Flow<String> = preferencesManager.remoteUrlFlow
 
     suspend fun getActiveConfig(): ServerConfig? = serverConfigFlow.firstOrNull()
 
-    suspend fun login(config: ServerConfig): Result<UserDto> {
+    suspend fun login(
+        config: ServerConfig,
+        type: ServerType = ServerType.LOCAL,
+        otherUrl: String? = null
+    ): Result<UserDto> {
         val result = apiClient.authenticate(config)
         if (result.isSuccess) {
-            preferencesManager.saveCredentials(config)
+            preferencesManager.saveCredentials(config, type, otherUrl)
         }
         return result
     }
+
+    suspend fun switchServer(type: ServerType): String =
+        preferencesManager.switchActiveServer(type)
+
+    suspend fun saveServerUrls(localUrl: String, remoteUrl: String, activeType: ServerType) =
+        preferencesManager.saveServerUrls(localUrl, remoteUrl, activeType)
 
     suspend fun logout() {
         preferencesManager.clearCredentials()

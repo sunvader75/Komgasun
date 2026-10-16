@@ -21,6 +21,8 @@ import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.VpnKey
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -51,11 +53,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.komgasun.R
 import com.example.komgasun.data.model.ItemFilter
 import com.example.komgasun.data.model.LibraryDto
+import com.example.komgasun.data.model.ServerType
 import com.example.komgasun.data.model.matchesFilters
 import com.example.komgasun.ui.common.EmptyView
 import com.example.komgasun.ui.common.ErrorView
 import com.example.komgasun.ui.common.FilterChipsRow
 import com.example.komgasun.ui.common.LoadingView
+import com.example.komgasun.ui.common.ServerSwitchDialog
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,6 +77,36 @@ fun LibrariesScreen(
 
     var libraryToEmptyTrash by remember { mutableStateOf<LibraryDto?>(null) }
     var showEmptyAllDialog by remember { mutableStateOf(false) }
+    var showServerDialog by remember { mutableStateOf(false) }
+
+    if (showServerDialog) {
+        ServerSwitchDialog(
+            activeServerType = state.activeServerType,
+            localUrl = state.localUrl,
+            remoteUrl = state.remoteUrl,
+            onDismiss = { showServerDialog = false },
+            onSwitchServer = { targetType ->
+                showServerDialog = false
+                viewModel.switchServer(targetType) { res ->
+                    scope.launch {
+                        if (res.isSuccess) {
+                            val url = res.getOrNull().orEmpty()
+                            snackbarHostState.showSnackbar("Cambiado a ${targetType.label}: $url")
+                        } else {
+                            snackbarHostState.showSnackbar("Error al cambiar: ${res.exceptionOrNull()?.localizedMessage}")
+                        }
+                    }
+                }
+            },
+            onSaveUrls = { local, remote, active ->
+                viewModel.saveServerUrls(local, remote, active) {
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Direcciones de servidor guardadas")
+                    }
+                }
+            }
+        )
+    }
 
     if (libraryToEmptyTrash != null) {
         val target = libraryToEmptyTrash!!
@@ -148,6 +182,12 @@ fun LibrariesScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.libraries)) },
                 actions = {
+                    IconButton(onClick = { showServerDialog = true }) {
+                        Icon(
+                            imageVector = if (state.activeServerType == ServerType.LOCAL) Icons.Default.Wifi else Icons.Default.VpnKey,
+                            contentDescription = stringResource(R.string.switch_server)
+                        )
+                    }
                     IconButton(onClick = { showEmptyAllDialog = true }) {
                         Icon(
                             Icons.Default.DeleteSweep,

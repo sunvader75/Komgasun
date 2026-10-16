@@ -11,6 +11,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.example.komgasun.data.model.ItemFilter
 import com.example.komgasun.data.model.SeriesSortOrder
 import com.example.komgasun.data.model.ServerConfig
+import com.example.komgasun.data.model.ServerType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -22,6 +23,9 @@ class PreferencesManager(private val context: Context) {
 
     companion object {
         val KEY_SERVER_URL = stringPreferencesKey("server_url")
+        val KEY_LOCAL_SERVER_URL = stringPreferencesKey("local_server_url")
+        val KEY_REMOTE_SERVER_URL = stringPreferencesKey("remote_server_url")
+        val KEY_ACTIVE_SERVER_TYPE = stringPreferencesKey("active_server_type")
         val KEY_USERNAME = stringPreferencesKey("username")
         val KEY_PASSWORD = stringPreferencesKey("password")
         val KEY_IS_LOGGED_IN = booleanPreferencesKey("is_logged_in")
@@ -29,6 +33,14 @@ class PreferencesManager(private val context: Context) {
         val KEY_SERIES_FILTER = stringPreferencesKey("series_filter")
         val KEY_BOOKS_FILTER = stringPreferencesKey("books_filter")
         val KEY_SERIES_SORT = stringPreferencesKey("series_sort")
+    }
+
+    private fun normalizeUrl(url: String): String {
+        var clean = url.trim().removeSuffix("/")
+        if (clean.isNotBlank() && !clean.startsWith("http://", ignoreCase = true) && !clean.startsWith("https://", ignoreCase = true)) {
+            clean = "http://$clean"
+        }
+        return clean
     }
 
     val serverConfigFlow: Flow<ServerConfig?> = context.dataStore.data
@@ -59,6 +71,18 @@ class PreferencesManager(private val context: Context) {
     val savedUrlFlow: Flow<String> = context.dataStore.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { it[KEY_SERVER_URL] ?: "" }
+
+    val localUrlFlow: Flow<String> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[KEY_LOCAL_SERVER_URL] ?: it[KEY_SERVER_URL] ?: "" }
+
+    val remoteUrlFlow: Flow<String> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { it[KEY_REMOTE_SERVER_URL] ?: "" }
+
+    val activeServerTypeFlow: Flow<ServerType> = context.dataStore.data
+        .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
+        .map { ServerType.fromName(it[KEY_ACTIVE_SERVER_TYPE]) }
 
     val savedUsernameFlow: Flow<String> = context.dataStore.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
@@ -112,13 +136,58 @@ class PreferencesManager(private val context: Context) {
         }
     }
 
-    suspend fun saveCredentials(serverConfig: ServerConfig) {
-        val cleanUrl = serverConfig.serverUrl.trim().removeSuffix("/")
+    suspend fun saveServerUrls(localUrl: String, remoteUrl: String, activeType: ServerType) {
+        val cleanLocal = normalizeUrl(localUrl)
+        val cleanRemote = normalizeUrl(remoteUrl)
+        val activeUrl = if (activeType == ServerType.REMOTE) cleanRemote else cleanLocal
+        context.dataStore.edit { preferences ->
+            if (cleanLocal.isNotBlank()) preferences[KEY_LOCAL_SERVER_URL] = cleanLocal
+            if (cleanRemote.isNotBlank()) preferences[KEY_REMOTE_SERVER_URL] = cleanRemote
+            preferences[KEY_ACTIVE_SERVER_TYPE] = activeType.name
+            if (activeUrl.isNotBlank()) {
+                preferences[KEY_SERVER_URL] = activeUrl
+            }
+        }
+    }
+
+    suspend fun switchActiveServer(type: ServerType): String {
+        var targetUrl = ""
+        context.dataStore.edit { preferences ->
+            val localUrl = preferences[KEY_LOCAL_SERVER_URL] ?: preferences[KEY_SERVER_URL] ?: ""
+            val remoteUrl = preferences[KEY_REMOTE_SERVER_URL] ?: ""
+            targetUrl = if (type == ServerType.REMOTE) remoteUrl else localUrl
+            preferences[KEY_ACTIVE_SERVER_TYPE] = type.name
+            if (targetUrl.isNotBlank()) {
+                preferences[KEY_SERVER_URL] = targetUrl
+            }
+        }
+        return targetUrl
+    }
+
+    suspend fun saveCredentials(
+        serverConfig: ServerConfig,
+        type: ServerType = ServerType.LOCAL,
+        otherUrl: String? = null
+    ) {
+        val cleanUrl = normalizeUrl(serverConfig.serverUrl)
+        val cleanOther = otherUrl?.let { normalizeUrl(it) }
         context.dataStore.edit { preferences ->
             preferences[KEY_SERVER_URL] = cleanUrl
             preferences[KEY_USERNAME] = serverConfig.username.trim()
             preferences[KEY_PASSWORD] = serverConfig.password
             preferences[KEY_IS_LOGGED_IN] = true
+            preferences[KEY_ACTIVE_SERVER_TYPE] = type.name
+            if (type == ServerType.LOCAL) {
+                preferences[KEY_LOCAL_SERVER_URL] = cleanUrl
+                if (!cleanOther.isNullOrBlank()) {
+                    preferences[KEY_REMOTE_SERVER_URL] = cleanOther
+                }
+            } else {
+                preferences[KEY_REMOTE_SERVER_URL] = cleanUrl
+                if (!cleanOther.isNullOrBlank()) {
+                    preferences[KEY_LOCAL_SERVER_URL] = cleanOther
+                }
+            }
         }
     }
 

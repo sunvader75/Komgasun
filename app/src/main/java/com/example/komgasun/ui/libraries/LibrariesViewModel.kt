@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.komgasun.KomgasunApp
 import com.example.komgasun.data.model.ItemFilter
 import com.example.komgasun.data.model.LibraryDto
+import com.example.komgasun.data.model.ServerType
 import com.example.komgasun.data.repository.KomgaRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,7 +17,11 @@ data class LibrariesUiState(
     val isLoading: Boolean = false,
     val libraries: List<LibraryDto> = emptyList(),
     val selectedFilters: Set<ItemFilter> = emptySet(),
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val activeServerType: ServerType = ServerType.LOCAL,
+    val localUrl: String = "",
+    val remoteUrl: String = "",
+    val activeUrl: String = ""
 )
 
 class LibrariesViewModel(
@@ -30,6 +35,26 @@ class LibrariesViewModel(
         viewModelScope.launch {
             repository.preferencesManager.librariesFilterFlow.collect { savedFilters ->
                 _uiState.update { it.copy(selectedFilters = savedFilters) }
+            }
+        }
+        viewModelScope.launch {
+            repository.activeServerTypeFlow.collect { type ->
+                _uiState.update { it.copy(activeServerType = type) }
+            }
+        }
+        viewModelScope.launch {
+            repository.localUrlFlow.collect { url ->
+                _uiState.update { it.copy(localUrl = url) }
+            }
+        }
+        viewModelScope.launch {
+            repository.remoteUrlFlow.collect { url ->
+                _uiState.update { it.copy(remoteUrl = url) }
+            }
+        }
+        viewModelScope.launch {
+            repository.serverConfigFlow.collect { config ->
+                _uiState.update { it.copy(activeUrl = config?.serverUrl ?: "") }
             }
         }
         loadLibraries()
@@ -96,6 +121,26 @@ class LibrariesViewModel(
             } else {
                 onDone(Result.success(Unit))
             }
+        }
+    }
+
+    fun switchServer(type: ServerType, onResult: (Result<String>) -> Unit) {
+        viewModelScope.launch {
+            val targetUrl = repository.switchServer(type)
+            if (targetUrl.isBlank()) {
+                onResult(Result.failure(IllegalStateException("No hay URL configurada para ${type.label}")))
+            } else {
+                loadLibraries()
+                onResult(Result.success(targetUrl))
+            }
+        }
+    }
+
+    fun saveServerUrls(localUrl: String, remoteUrl: String, activeType: ServerType, onSaved: () -> Unit = {}) {
+        viewModelScope.launch {
+            repository.saveServerUrls(localUrl, remoteUrl, activeType)
+            loadLibraries()
+            onSaved()
         }
     }
 

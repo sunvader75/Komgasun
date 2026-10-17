@@ -75,6 +75,7 @@ fun ComicReaderScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    ComicImmersiveMode()
 
     LaunchedEffect(bookId) {
         if (!state.isReady) {
@@ -206,6 +207,9 @@ fun ComicReaderScreen(
                             model = readerPageRequest(LocalContext.current, imageUrl),
                             contentDescription = "Página ${page.number}",
                             contentScale = ContentScale.Fit,
+                            success = {
+                                ComicPageContent(scrollEnabled = !isCurrentPageZoomed && !isMultiTouchActive)
+                            },
                             loading = {
                                 Box(
                                     modifier = Modifier.fillMaxSize(),

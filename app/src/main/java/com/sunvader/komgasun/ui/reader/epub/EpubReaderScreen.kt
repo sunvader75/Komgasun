@@ -201,17 +201,17 @@ fun EpubReaderScreen(
                     ) {
                         IconButton(
                             onClick = viewModel::previousChapter,
-                            enabled = state.currentChapterIndex > 0
+                            enabled = state.pageCount > 0 && (state.currentChapterIndex > 0 || state.page > 0)
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Capítulo anterior",
+                                contentDescription = "Página anterior",
                                 tint = if (state.isDarkTheme) Color.White else MaterialTheme.colorScheme.onSurface
                             )
                         }
 
                         Text(
-                            text = "Capítulo ${state.currentChapterIndex + 1} de $totalChapters",
+                            text = "${state.page + 1}/${state.pageCount.coerceAtLeast(1)} · Capítulo ${state.currentChapterIndex + 1}/$totalChapters",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
                             color = if (state.isDarkTheme) Color.White else MaterialTheme.colorScheme.onSurface
@@ -219,11 +219,11 @@ fun EpubReaderScreen(
 
                         IconButton(
                             onClick = viewModel::nextChapter,
-                            enabled = state.currentChapterIndex < totalChapters - 1
+                            enabled = state.pageCount > 0 && (state.currentChapterIndex < totalChapters - 1 || state.page < state.pageCount - 1)
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowForward,
-                                contentDescription = "Capítulo siguiente",
+                                contentDescription = "Página siguiente",
                                 tint = if (state.isDarkTheme) Color.White else MaterialTheme.colorScheme.onSurface
                             )
                         }
@@ -280,26 +280,13 @@ fun EpubReaderScreen(
                     )
                 }
                 state.epubBook != null -> {
-                    val currentChapter = state.epubBook?.chapters?.getOrNull(state.currentChapterIndex)
-                    val rawHtml = currentChapter?.htmlContent.orEmpty()
-                    val styledHtml = buildStyledHtml(
-                        rawHtml = rawHtml,
-                        isDarkTheme = state.isDarkTheme,
-                        fontSizeSp = state.fontSizeSp
-                    )
-
                     AndroidView(
-                        factory = { ctx ->
-                            WebView(ctx).apply {
-                                settings.javaScriptEnabled = false
-                                settings.defaultTextEncodingName = "utf-8"
-                                setBackgroundColor(if (state.isDarkTheme) 0xFF121212.toInt() else 0xFFFFFFFF.toInt())
-                            }
-                        },
-                        update = { webView ->
-                            webView.setBackgroundColor(if (state.isDarkTheme) 0xFF121212.toInt() else 0xFFFFFFFF.toInt())
-                            webView.loadDataWithBaseURL(null, styledHtml, "text/html", "UTF-8", null)
-                        },
+                        factory = { ctx -> EpubWebView(ctx).apply {
+                            onMove = viewModel::movePage
+                            onMeasured = viewModel::onPageMeasured
+                        } },
+                        update = { it.render(state) },
+                        onRelease = { it.dispose() },
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -344,42 +331,5 @@ fun EpubReaderScreen(
                 }
             }
         )
-    }
-}
-
-private fun buildStyledHtml(
-    rawHtml: String,
-    isDarkTheme: Boolean,
-    fontSizeSp: Int
-): String {
-    val bgColor = if (isDarkTheme) "#121212" else "#FFFFFF"
-    val textColor = if (isDarkTheme) "#E0E0E0" else "#212121"
-    val linkColor = if (isDarkTheme) "#90CAF9" else "#1976D2"
-
-    val css = """
-        <style>
-            body {
-                background-color: $bgColor;
-                color: $textColor;
-                font-family: sans-serif;
-                font-size: ${fontSizeSp}px;
-                line-height: 1.6;
-                padding: 16px;
-                margin: 0;
-            }
-            a { color: $linkColor; }
-            img { max-width: 100%; height: auto; }
-            pre, code {
-                background-color: ${if (isDarkTheme) "#1E1E1E" else "#F5F5F5"};
-                padding: 4px;
-                border-radius: 4px;
-            }
-        </style>
-    """.trimIndent()
-
-    return if (rawHtml.contains("<head>", ignoreCase = true)) {
-        rawHtml.replaceFirst("(?i)<head>".toRegex(), "<head>$css")
-    } else {
-        "<html><head>$css</head><body>$rawHtml</body></html>"
     }
 }

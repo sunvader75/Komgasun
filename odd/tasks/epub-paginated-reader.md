@@ -1,0 +1,24 @@
+# EPUB compatibility and paginated reader
+Objective: investigate EPUB processing failures and replace scrolling with swipe-based pages.
+Branch: feat/epub-paginated-reader; delivery: feature-branch-chain (selected by user); checks: ANDROID_HOME=/Users/sunva/Library/Android/sdk bash gradlew :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
+
+## Specs
+S1. "investiga por que dan tanto error de procesamiento los epub, muchos no llegan a abrir."
+S2. "Además tienes que rediseñarlo por completo, la lectura debe ser por paginas no con scroll."
+S3. "La nevegacion similar a la de libros y comics , haciendo swipe."
+
+## Tasks
+T1 | S1 | delegated exploration | done | commit: none; code evidence gathered, no user EPUB supplied.
+T2 | S1 | delegated implementation | done | commit: pending; Android XML optional-feature correction RED/GREEN and independent targeted recheck passed.
+T3 | S2-S3 | delegated implementation | done | commit: pending; horizontal WebView implementation and instrumentation APK compiled; device execution unavailable.
+T4 | S1-S3 | independent verification | in_progress | commit: pending; deterministic checks, build and WebView/device proof availability.
+
+## Log
+L1. User original request: "investiga por que dan tanto error de procesamiento los epub, muchos no llegan a abrir. Además tienes que rediseñarlo por completo, la lectura debe ser por paginas no con scroll. La nevegacion similar a la de libros y comics , haciendo swipe."
+L2. Read-only exploration identified fragile namespace/path/encoding handling, silent chapter omission, unresolved ZIP resources in loadDataWithBaseURL(null), sticky invalid-cache retries, overlapping initialization and chapter-based server progress. These are code findings, not reproduction of user's affected EPUBs. User file requested but not supplied.
+L3. Intended compatibility boundary: preserve existing controls and chapter-compatible Komga progress; precise reflow position must not be represented as a device-independent server page count. Any JavaScript/resource bridge must prevent publication scripts and external/file access. No DRM circumvention or full EPUB specification compliance is claimed.
+L4. Forecast exceeds 400 authored changed lines: parser fixtures and compatibility, cache lifecycle, resource loading and paginated WebView integration form dependent work units. User selected feature-branch-chain; no push/PR authorized. Existing staged/unstaged Gradle changes are unrelated and must remain untouched.
+L5. Parser fixtures reproduced old basename guessing/JVM XML limitations, then verified canonical paths, namespaces, UTF-16, missing-spine errors and bounded read-only resources. Parent spotted overly strict chapter XML validation; ordinary EPUB2 DOCTYPE/entities and text/html fixtures failed RED, then passed after preserving chapter HTML as opaque content. Container/OPF DTD/entity guards remain. Latest worker command passed 66 JVM tests plus app and instrumentation APK assembly. No device/user-file proof. Cache and WebView must now consume the new publication API with explicit resource/script boundaries.
+L6. Paginated renderer implemented with native horizontal gestures, CSS columns, synthetic local resources and guarded app-side JavaScript; publication scripts disabled by CSP/inert import. Server progress remains chapter-based; private resume is chapter/proportion capped at 256 records. Cache recovery redownloads invalid files once, loading is serialized/cancelled. Combined Gradle checks pass; 11 new pagination/storage/HTML JVM tests pass. WebView instrumentation compiles but no device execution/actual Activity rotation or failing user EPUB proof. Native assessment escalated security item 2; independent verification now required.
+L7. Independent verifier reproduced a platform configuration blocker using Android36 DocumentBuilderFactoryImpl source as scratch provider: unconditional external-general-entities feature throws ParserConfigurationException; positive parser fixtures fail there while desktop parser passes. This is platform-source reproduction, not Android device execution. T2 reopened for bounded correction after verification pass completes.
+L8. B1 corrected: optional XML feature switches tolerate ParserConfigurationException; decoded package DTD/ENTITY precheck and rejecting resolver remain. Restricted-factory test failed RED then all 78 JVM tests passed; Android fixture compiled. Independent targeted recheck passed 15 parser tests with desktop and Android36 feature-support implementation plus desktop builder delegation. Final parent Gradle unit/app/androidTest build exit 0. No Android DOM/WebView execution or affected-user-EPUB proof; these remain required acceptance gaps. Delivery slices: parser/resources+fixtures first, paginated reader/cache+fixtures second. Both coherent units exceed the line heuristic; no cosmetic shrinking or test omission.

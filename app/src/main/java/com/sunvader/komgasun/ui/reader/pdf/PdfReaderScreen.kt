@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
 import com.sunvader.komgasun.ui.reader.PagePreloader
 import com.sunvader.komgasun.ui.reader.readerPageRequest
 import com.sunvader.komgasun.KomgasunApp
@@ -262,12 +263,19 @@ fun PdfReaderScreen(
                                     }
                                 ) {
                                     if (bitmap != null) {
-                                        Image(
-                                            bitmap = bitmap!!.asImageBitmap(),
-                                            contentDescription = "Página ${pageIndex + 1}",
-                                            contentScale = ContentScale.Fit,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
+                                        PdfPageContent(
+                                            imageWidth = bitmap!!.width.toFloat(),
+                                            imageHeight = bitmap!!.height.toFloat(),
+                                            resetKey = pagerState.currentPage,
+                                            scrollEnabled = !isCurrentPageZoomed && !isMultiTouchActive
+                                        ) { pageModifier ->
+                                            Image(
+                                                bitmap = bitmap!!.asImageBitmap(),
+                                                contentDescription = "Página ${pageIndex + 1}",
+                                                contentScale = ContentScale.Fit,
+                                                modifier = pageModifier
+                                            )
+                                        }
                                     } else if (isPageLoading) {
                                         CircularProgressIndicator(
                                             color = MaterialTheme.colorScheme.primary,
@@ -300,6 +308,20 @@ fun PdfReaderScreen(
                                         model = readerPageRequest(LocalContext.current, imageUrl),
                                         contentDescription = "Página $pageNumber",
                                         contentScale = ContentScale.Fit,
+                                        success = {
+                                            val imageSize = painter.intrinsicSize
+                                            PdfPageContent(
+                                                imageWidth = imageSize.width,
+                                                imageHeight = imageSize.height,
+                                                resetKey = pagerState.currentPage,
+                                                scrollEnabled = !isCurrentPageZoomed && !isMultiTouchActive
+                                            ) { pageModifier ->
+                                                SubcomposeAsyncImageContent(
+                                                    modifier = pageModifier,
+                                                    contentScale = ContentScale.Fit
+                                                )
+                                            }
+                                        },
                                         loading = {
                                             Box(
                                                 modifier = Modifier.fillMaxSize(),

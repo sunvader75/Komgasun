@@ -8,32 +8,68 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
-private val DarkColorScheme = darkColorScheme(primary = Purple80, secondary = PurpleGrey80, tertiary = Pink80)
+private val DarkColorScheme =
+  darkColorScheme(
+    primary = SlateBlue80,
+    onPrimary = SlateBlue20,
+    primaryContainer = SlateBlue30,
+    onPrimaryContainer = SlateBlue90,
+    secondary = MutedSlate80,
+    onSecondary = MutedSlate20,
+    secondaryContainer = MutedSlate30,
+    onSecondaryContainer = MutedSlate90,
+    tertiary = SoftMauve80,
+    onTertiary = SoftMauve20,
+    tertiaryContainer = SoftMauve30,
+    onTertiaryContainer = SoftMauve90,
+    background = DarkBackground,
+    onBackground = DarkOnBackground,
+    surface = DarkSurface,
+    onSurface = DarkOnSurface,
+    surfaceVariant = DarkSurfaceVariant,
+    onSurfaceVariant = DarkOnSurfaceVariant,
+    surfaceContainer = DarkSurfaceContainer,
+    surfaceContainerHigh = DarkSurfaceContainerHigh,
+    surfaceContainerLowest = DarkSurfaceContainerLowest,
+    outline = DarkOutline,
+    outlineVariant = DarkOutlineVariant,
+  )
 
 private val LightColorScheme =
   lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40,
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
+    primary = SlateBlue40,
     onPrimary = Color.White,
+    primaryContainer = SlateBlue90,
+    onPrimaryContainer = SlateBlue10,
+    secondary = MutedSlate40,
     onSecondary = Color.White,
+    secondaryContainer = MutedSlate90,
+    onSecondaryContainer = MutedSlate10,
+    tertiary = SoftMauve40,
     onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+    tertiaryContainer = SoftMauve90,
+    onTertiaryContainer = SoftMauve10,
+    background = LightBackground,
+    onBackground = LightOnBackground,
+    surface = LightSurface,
+    onSurface = LightOnSurface,
+    surfaceVariant = LightSurfaceVariant,
+    onSurfaceVariant = LightOnSurfaceVariant,
+    surfaceContainer = LightSurfaceContainer,
+    surfaceContainerHigh = LightSurfaceContainerHigh,
+    surfaceContainerLowest = LightSurfaceContainerLowest,
+    outline = LightOutline,
+    outlineVariant = LightOutlineVariant,
   )
 
 @Composable
 fun MyApplicationTheme(
   darkTheme: Boolean = isSystemInDarkTheme(),
-  // Dynamic color is available on Android 12+
-  dynamicColor: Boolean = true,
+  // Set to false to ensure a consistent, branded theme across phones and tablets
+  dynamicColor: Boolean = false,
   content: @Composable () -> Unit,
 ) {
   val colorScheme =

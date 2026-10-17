@@ -85,9 +85,45 @@ fun LibrariesScreen(
         onPauseOrDispose { }
     }
 
+    var bookToDelete by remember { mutableStateOf<BookDto?>(null) }
     var libraryToEmptyTrash by remember { mutableStateOf<LibraryDto?>(null) }
     var showEmptyAllDialog by remember { mutableStateOf(false) }
     var showServerDialog by remember { mutableStateOf(false) }
+
+    if (bookToDelete != null) {
+        val target = bookToDelete!!
+        val title = target.metadata.title.ifBlank { target.name }
+        AlertDialog(
+            onDismissRequest = { bookToDelete = null },
+            title = { Text(stringResource(R.string.delete_file)) },
+            text = {
+                Text("¿Eliminar archivo de '$title'? Esta acción eliminará físicamente el archivo del cómic del servidor. Quedará como no disponible hasta vaciar la papelera.")
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = target.id !in state.updatingBooks,
+                    onClick = {
+                        bookToDelete = null
+                        viewModel.deleteBook(target.id) { res ->
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    if (res.isSuccess) "Archivo de '$title' eliminado"
+                                    else "Error al eliminar: ${res.exceptionOrNull()?.localizedMessage}"
+                                )
+                            }
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { bookToDelete = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
 
     if (showServerDialog) {
         ServerSwitchDialog(
@@ -282,8 +318,20 @@ fun LibrariesScreen(
                                             book = book,
                                             serverUrl = state.activeUrl,
                                             onClick = { onBookClick(book) },
-                                            onDeleteClick = {},
-                                            showActions = false,
+                                            onDeleteClick = {
+                                                if (book.id !in state.updatingBooks) bookToDelete = book
+                                            },
+                                            readStatusUpdating = book.id in state.updatingBooks,
+                                            onReadStatusClick = { completed ->
+                                                viewModel.setBookReadStatus(book, completed) { result ->
+                                                    scope.launch {
+                                                        snackbarHostState.showSnackbar(
+                                                            if (result.isSuccess) "Estado sincronizado con Komga"
+                                                            else "No se pudo sincronizar: ${result.exceptionOrNull()?.localizedMessage}"
+                                                        )
+                                                    }
+                                                }
+                                            },
                                             modifier = Modifier.width(150.dp)
                                         )
                                     }

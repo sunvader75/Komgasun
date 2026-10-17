@@ -11,7 +11,7 @@ Komgasun está basada en [Komelia](https://github.com/Snd-R/Komelia), de [Snd-R]
 ## Funciones
 
 - Navegación por bibliotecas, series y libros, con filtros de lectura y ordenación de series.
-- Sección «Continuar leyendo» debajo de las bibliotecas: muestra las lecturas en progreso de Komga y permite abrir directamente su lector. Se actualiza al volver a la pantalla principal y al pulsar actualizar.
+- Sección «Continuar leyendo» debajo de las bibliotecas: muestra las lecturas en progreso de Komga y permite abrir directamente su lector. Su menú ⋮ permite marcar como leído, como no leído o eliminar el archivo, igual que dentro de las bibliotecas. Eliminar requiere confirmar el borrado físico del archivo del servidor; cancelar no cambia nada. Tras una acción confirmada por Komga, la lectura desaparece de esta sección y se actualizan las bibliotecas; si falla, se conserva y se muestra el error. Mientras se procesa una acción, no se puede ejecutar otra sobre el mismo libro. Se actualiza al volver a la pantalla principal y al pulsar actualizar.
 - Lector de cómics CBR/CBZ con zoom y precarga de las tres páginas siguientes y la anterior.
 - Lector PDF con precarga de las tres páginas siguientes y la anterior en streaming. También permite descargar el documento para renderizarlo en el dispositivo, priorizando la página actual y con caché de páginas cercanas de hasta 32 MiB.
 - Lector EPUB con índice de capítulos, tamaño de texto ajustable y tema claro u oscuro. Los errores de descarga o análisis se muestran con una opción para reintentar, en lugar de mantener el indicador de carga.

@@ -20,6 +20,7 @@ data class LibrariesUiState(
     val inProgressBooks: List<BookDto> = emptyList(),
     val progressLoading: Boolean = false,
     val progressError: String? = null,
+    val updatingBooks: Set<String> = emptySet(),
     val selectedFilters: Set<ItemFilter> = emptySet(),
     val errorMessage: String? = null,
     val activeServerType: ServerType = ServerType.LOCAL,
@@ -34,6 +35,7 @@ class LibrariesViewModel(
 
     private val _uiState = MutableStateFlow(LibrariesUiState())
     val uiState: StateFlow<LibrariesUiState> = _uiState.asStateFlow()
+    private var progressRevision = 0
 
     init {
         viewModelScope.launch {
@@ -87,10 +89,16 @@ class LibrariesViewModel(
     }
 
     fun loadInProgressBooks() {
+        val revision = progressRevision
         _uiState.update { it.copy(progressLoading = true, progressError = null) }
         viewModelScope.launch {
             repository.getInProgressBooks().onSuccess { books ->
-                _uiState.update { it.copy(progressLoading = false, inProgressBooks = books) }
+                _uiState.update {
+                    it.copy(
+                        progressLoading = false,
+                        inProgressBooks = if (revision == progressRevision) books else it.inProgressBooks
+                    )
+                }
             }.onFailure { error ->
                 _uiState.update { it.copy(progressLoading = false, progressError = error.localizedMessage ?: "Error al cargar lecturas en progreso") }
             }
@@ -99,7 +107,13 @@ class LibrariesViewModel(
 
     fun loadLibraries() {
         loadInProgressBooks()
-        _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        refreshLibraries(showLoading = true)
+    }
+
+    private fun refreshLibraries(showLoading: Boolean = false) {
+        if (showLoading) {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+        }
         viewModelScope.launch {
             val result = repository.getLibraries()
             result.onSuccess { list ->
@@ -111,6 +125,40 @@ class LibrariesViewModel(
                         errorMessage = error.localizedMessage ?: "Error al cargar bibliotecas"
                     )
                 }
+            }
+        }
+    }
+
+    fun setBookReadStatus(book: BookDto, completed: Boolean, onDone: (Result<Unit>) -> Unit = {}) {
+        updateBook(book.id, onDone) { repository.setBookReadStatus(book, completed) }
+    }
+
+    fun deleteBook(bookId: String, onDone: (Result<Unit>) -> Unit = {}) {
+        updateBook(bookId, onDone) { repository.deleteBookFile(bookId) }
+    }
+
+    private fun updateBook(
+        bookId: String,
+        onDone: (Result<Unit>) -> Unit,
+        action: suspend () -> Result<Unit>
+    ) {
+        if (bookId in _uiState.value.updatingBooks) return
+        if (_uiState.value.inProgressBooks.none { it.id == bookId }) return
+        _uiState.update { it.copy(updatingBooks = it.updatingBooks + bookId) }
+        viewModelScope.launch {
+            try {
+                val result = action()
+                result.onSuccess {
+                    // Ignore progress fetches started before this server-confirmed change.
+                    progressRevision++
+                    _uiState.update { state ->
+                        state.copy(inProgressBooks = state.inProgressBooks.filterNot { it.id == bookId })
+                    }
+                    refreshLibraries()
+                }
+                onDone(result)
+            } finally {
+                _uiState.update { it.copy(updatingBooks = it.updatingBooks - bookId) }
             }
         }
     }

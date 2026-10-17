@@ -123,7 +123,7 @@ Para ejecutar las pruebas unitarias:
 Kotlin · Jetpack Compose · Material 3 · Navigation 3 · ViewModel y StateFlow · Coroutines · OkHttp · Kotlin Serialization · DataStore · Coil · PdfRenderer · WebView.
 
 ```text
-app/src/main/java/com/example/komgasun/
+app/src/main/java/com/sunvader/komgasun/
 ├── data/
 │   ├── local/          # Preferencias y configuración
 │   ├── model/          # Modelos de datos

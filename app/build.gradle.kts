@@ -5,10 +5,10 @@ plugins {
 }
 
 android {
-    namespace = "com.example.komgasun"
+    namespace = "com.sunvader.komgasun"
     compileSdk = 37
     defaultConfig {
-        applicationId = "com.example.komgasun"
+        applicationId = "com.sunvader.komgasun"
         minSdk = 24
         targetSdk = 37
         versionCode = 1

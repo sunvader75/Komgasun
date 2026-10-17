@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -48,13 +49,16 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sunvader.komgasun.R
+import com.sunvader.komgasun.data.model.BookDto
 import com.sunvader.komgasun.data.model.ItemFilter
 import com.sunvader.komgasun.data.model.LibraryDto
 import com.sunvader.komgasun.data.model.ServerType
 import com.sunvader.komgasun.data.model.matchesFilters
+import com.sunvader.komgasun.ui.books.BookGridItem
 import com.sunvader.komgasun.ui.common.EmptyView
 import com.sunvader.komgasun.ui.common.ErrorView
 import com.sunvader.komgasun.ui.common.FilterChipsRow
@@ -67,6 +71,7 @@ import kotlinx.coroutines.launch
 fun LibrariesScreen(
     onLibraryClick: (libraryId: String, libraryName: String) -> Unit,
     onLogout: () -> Unit,
+    onBookClick: (BookDto) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: LibrariesViewModel = viewModel()
 ) {
@@ -74,6 +79,11 @@ fun LibrariesScreen(
     val filteredLibraries = state.libraries.filter { it.matchesFilters(state.selectedFilters) }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    LifecycleResumeEffect(Unit) {
+        viewModel.loadInProgressBooks()
+        onPauseOrDispose { }
+    }
 
     var libraryToEmptyTrash by remember { mutableStateOf<LibraryDto?>(null) }
     var showEmptyAllDialog by remember { mutableStateOf(false) }
@@ -233,16 +243,6 @@ fun LibrariesScreen(
                         modifier = Modifier.weight(1f)
                     )
                 }
-                filteredLibraries.isEmpty() -> {
-                    EmptyView(
-                        message = if (state.libraries.isEmpty()) {
-                            stringResource(R.string.empty_libraries)
-                        } else {
-                            "No hay bibliotecas que coincidan con el filtro seleccionado"
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
                 else -> {
                     LazyColumn(
                         modifier = Modifier
@@ -251,12 +251,44 @@ fun LibrariesScreen(
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        if (filteredLibraries.isEmpty()) {
+                            item {
+                                Text(if (state.libraries.isEmpty()) stringResource(R.string.empty_libraries)
+                                    else "No hay bibliotecas que coincidan con el filtro seleccionado")
+                            }
+                        }
                         items(filteredLibraries, key = { it.id }) { library ->
                             LibraryItem(
                                 library = library,
                                 onClick = { onLibraryClick(library.id, library.name) },
                                 onEmptyTrash = { libraryToEmptyTrash = library }
                             )
+                        }
+                        item {
+                            Text("Continuar leyendo", style = MaterialTheme.typography.titleLarge)
+                        }
+                        item {
+                            when {
+                                state.progressLoading -> LoadingView(modifier = Modifier.fillMaxWidth().height(100.dp))
+                                state.progressError != null -> ErrorView(
+                                    message = state.progressError.orEmpty(),
+                                    onRetry = viewModel::loadInProgressBooks,
+                                    modifier = Modifier.fillMaxWidth().height(160.dp)
+                                )
+                                state.inProgressBooks.isEmpty() -> Text("No hay libros ni cómics en progreso")
+                                else -> LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    items(state.inProgressBooks, key = { it.id }) { book ->
+                                        BookGridItem(
+                                            book = book,
+                                            serverUrl = state.activeUrl,
+                                            onClick = { onBookClick(book) },
+                                            onDeleteClick = {},
+                                            showActions = false,
+                                            modifier = Modifier.width(150.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

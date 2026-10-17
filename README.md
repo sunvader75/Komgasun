@@ -11,9 +11,10 @@ Komgasun está basada en [Komelia](https://github.com/Snd-R/Komelia), de [Snd-R]
 ## Funciones
 
 - Navegación por bibliotecas, series y libros, con filtros de lectura y ordenación de series.
-- Lector de cómics con zoom.
-- Lector PDF con páginas servidas por Komga y opción de descargar el documento para renderizarlo en el dispositivo.
-- Lector EPUB con índice de capítulos, tamaño de texto ajustable y tema claro u oscuro.
+- Sección «Continuar leyendo» debajo de las bibliotecas: muestra las lecturas en progreso de Komga y permite abrir directamente su lector. Se actualiza al volver a la pantalla principal y al pulsar actualizar.
+- Lector de cómics CBR/CBZ con zoom y precarga de las tres páginas siguientes y la anterior.
+- Lector PDF con precarga de las tres páginas siguientes y la anterior en streaming. También permite descargar el documento para renderizarlo en el dispositivo, priorizando la página actual y con caché de páginas cercanas de hasta 32 MiB.
+- Lector EPUB con índice de capítulos, tamaño de texto ajustable y tema claro u oscuro. Los errores de descarga o análisis se muestran con una opción para reintentar, en lugar de mantener el indicador de carga.
 - Sincronización del progreso de lectura con Komga.
 - Marcar cómics y libros como leídos o no leídos desde el menú ⋮ de cada portada. «Marcar como no leído» reinicia el progreso en Komga. Se necesita conexión: el estado cambia al confirmar el servidor y, si falla, se muestra un error.
 - Configuración de una dirección local y otra remota, con cambio manual entre ambas.
@@ -115,8 +116,8 @@ Para ejecutar las pruebas unitarias:
 - Los listados solicitan hasta 500 series por biblioteca y hasta 500 libros por serie, sin cargar páginas posteriores. El servidor puede imponer un límite menor.
 - La caché de PDF y EPUB no constituye un modo sin conexión completo: no se garantiza la navegación ni la sincronización sin acceso a Komga.
 - La caché de documentos y el progreso temporal no están separados por cuenta y servidor. Evita reutilizar la aplicación entre servidores o cuentas diferentes; las dos direcciones de conexión están pensadas para la misma instancia.
-- Los documentos muy grandes pueden consumir mucha memoria. El lector EPUB carga capítulos completos y la caché de páginas PDF no tiene un presupuesto de memoria definido.
-- Algunos errores de los lectores pueden dejar visible el indicador de carga en lugar del mensaje de error.
+- Los documentos muy grandes pueden consumir mucha memoria. El lector EPUB carga capítulos completos. La caché del PDF local está limitada a 32 MiB; las páginas visibles pueden ocupar memoria adicional y cada renderizado se limita a unos cuatro millones de píxeles.
+- La compatibilidad EPUB depende del contenido del archivo; mostrar un error y permitir reintentar no corrige todos los formatos o archivos dañados.
 
 ## Tecnologías y estructura
 

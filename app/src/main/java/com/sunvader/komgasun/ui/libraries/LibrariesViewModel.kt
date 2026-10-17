@@ -3,6 +3,7 @@ package com.sunvader.komgasun.ui.libraries
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sunvader.komgasun.KomgasunApp
+import com.sunvader.komgasun.data.model.BookDto
 import com.sunvader.komgasun.data.model.ItemFilter
 import com.sunvader.komgasun.data.model.LibraryDto
 import com.sunvader.komgasun.data.model.ServerType
@@ -16,6 +17,9 @@ import kotlinx.coroutines.launch
 data class LibrariesUiState(
     val isLoading: Boolean = false,
     val libraries: List<LibraryDto> = emptyList(),
+    val inProgressBooks: List<BookDto> = emptyList(),
+    val progressLoading: Boolean = false,
+    val progressError: String? = null,
     val selectedFilters: Set<ItemFilter> = emptySet(),
     val errorMessage: String? = null,
     val activeServerType: ServerType = ServerType.LOCAL,
@@ -82,7 +86,19 @@ class LibrariesViewModel(
         }
     }
 
+    fun loadInProgressBooks() {
+        _uiState.update { it.copy(progressLoading = true, progressError = null) }
+        viewModelScope.launch {
+            repository.getInProgressBooks().onSuccess { books ->
+                _uiState.update { it.copy(progressLoading = false, inProgressBooks = books) }
+            }.onFailure { error ->
+                _uiState.update { it.copy(progressLoading = false, progressError = error.localizedMessage ?: "Error al cargar lecturas en progreso") }
+            }
+        }
+    }
+
     fun loadLibraries() {
+        loadInProgressBooks()
         _uiState.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
             val result = repository.getLibraries()

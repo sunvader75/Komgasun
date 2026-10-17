@@ -59,6 +59,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sunvader.komgasun.KomgasunApp
 import com.sunvader.komgasun.R
+import com.sunvader.komgasun.ui.reader.ReaderLoadStatus
+import com.sunvader.komgasun.ui.reader.readerLoadStatus
 import com.sunvader.komgasun.ui.common.ErrorView
 import com.sunvader.komgasun.ui.common.LoadingView
 
@@ -236,7 +238,15 @@ fun EpubReaderScreen(
                 .padding(innerPadding)
                 .background(if (state.isDarkTheme) Color(0xFF121212) else Color.White)
         ) {
+            val loadStatus = readerLoadStatus(state.isLoading, state.isReady, state.errorMessage)
             when {
+                loadStatus == ReaderLoadStatus.ERROR -> {
+                    ErrorView(
+                        message = state.errorMessage.orEmpty(),
+                        onRetry = viewModel::initEpub,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
                 state.downloadProgress != null -> {
                     Column(
                         modifier = Modifier
@@ -263,16 +273,9 @@ fun EpubReaderScreen(
                         )
                     }
                 }
-                state.isLoading || !state.isReady -> {
+                loadStatus == ReaderLoadStatus.LOADING -> {
                     LoadingView(
                         message = "Procesando contenido del libro...",
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-                state.errorMessage != null -> {
-                    ErrorView(
-                        message = state.errorMessage.orEmpty(),
-                        onRetry = viewModel::initEpub,
                         modifier = Modifier.fillMaxSize()
                     )
                 }

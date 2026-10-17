@@ -85,6 +85,11 @@ class KomgaRepository(
         }
     }
 
+    suspend fun getInProgressBooks(): Result<List<BookDto>> {
+        val config = getActiveConfig() ?: return Result.failure(IOException("Sesión no iniciada"))
+        return apiClient.getInProgressBooks(config)
+    }
+
     suspend fun getBook(bookId: String): Result<BookDto> {
         val config = getActiveConfig() ?: return Result.failure(IOException("Sesión no iniciada"))
         val result = apiClient.getBook(config, bookId)

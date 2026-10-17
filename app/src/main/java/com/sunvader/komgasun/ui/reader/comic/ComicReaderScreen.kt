@@ -56,7 +56,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.SubcomposeAsyncImage
-import coil.request.ImageRequest
+import com.sunvader.komgasun.ui.reader.PagePreloader
+import com.sunvader.komgasun.ui.reader.readerPageRequest
 import com.sunvader.komgasun.R
 import com.sunvader.komgasun.data.remote.KomgaApiClient
 import com.sunvader.komgasun.ui.common.ErrorView
@@ -172,6 +173,11 @@ fun ComicReaderScreen(
                     viewModel.onPageChanged(pagerState.currentPage, pages.size)
                 }
 
+                val pageUrls = remember(pages, state.serverUrl, bookId) {
+                    pages.map { KomgaApiClient.getPageImageUrl(state.serverUrl, bookId, it.number) }
+                }
+                PagePreloader(pagerState.currentPage, pageUrls)
+
                 HorizontalPager(
                     state = pagerState,
                     modifier = Modifier.fillMaxSize(),
@@ -197,10 +203,7 @@ fun ComicReaderScreen(
                         }
                     ) {
                         SubcomposeAsyncImage(
-                            model = ImageRequest.Builder(LocalContext.current)
-                                .data(imageUrl)
-                                .crossfade(true)
-                                .build(),
+                            model = readerPageRequest(LocalContext.current, imageUrl),
                             contentDescription = "Página ${page.number}",
                             contentScale = ContentScale.Fit,
                             loading = {

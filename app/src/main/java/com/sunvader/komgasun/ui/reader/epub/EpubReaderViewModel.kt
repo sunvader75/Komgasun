@@ -36,12 +36,8 @@ class EpubReaderViewModel(
     private var lastSyncedChapter: Int = -1
     private var initialChapterIndex: Int = 0
 
-    init {
-        initEpub()
-    }
-
     fun initEpub() {
-        _uiState.update { it.copy(isLoading = true, isReady = false, errorMessage = null) }
+        _uiState.update { it.copy(isLoading = true, isReady = false, downloadProgress = null, errorMessage = null) }
         viewModelScope.launch {
             val bookResult = repository.getBook(bookId)
             val readProgress = bookResult.getOrNull()?.readProgress
@@ -100,6 +96,7 @@ class EpubReaderViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val book = EpubParser.parse(file)
+                check(book.chapters.isNotEmpty()) { "No se encontraron capítulos legibles en este EPUB" }
                 val targetIndex = initialChapterIndex.coerceIn(0, (book.chapters.size - 1).coerceAtLeast(0))
                 lastSyncedChapter = targetIndex + 1
                 _uiState.update {

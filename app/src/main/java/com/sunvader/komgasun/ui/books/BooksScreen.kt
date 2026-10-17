@@ -350,7 +350,8 @@ fun BookGridItem(
     onDeleteClick: () -> Unit,
     modifier: Modifier = Modifier,
     readStatusUpdating: Boolean = false,
-    onReadStatusClick: (Boolean) -> Unit = {}
+    onReadStatusClick: (Boolean) -> Unit = {},
+    showActions: Boolean = true
 ) {
     val title = book.metadata.title.ifBlank { book.name }
     val thumbnailUrl = if (serverUrl.isNotBlank()) {
@@ -486,6 +487,7 @@ fun BookGridItem(
                     }
                 }
 
+                if (showActions) {
                 var showItemMenu by remember { mutableStateOf(false) }
                 Box {
                     IconButton(
@@ -530,6 +532,7 @@ fun BookGridItem(
                             }
                         )
                     }
+                }
                 }
             }
         }

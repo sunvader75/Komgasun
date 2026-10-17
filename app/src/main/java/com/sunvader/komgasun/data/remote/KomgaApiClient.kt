@@ -181,6 +181,30 @@ class KomgaApiClient(
         }
     }
 
+    suspend fun getInProgressBooks(config: ServerConfig): Result<List<BookDto>> = withContext(Dispatchers.IO) {
+        val books = mutableListOf<BookDto>()
+        var pageNumber = 0
+        try {
+            do {
+                val baseUrl = config.serverUrl.trim().removeSuffix("/")
+                val request = buildRequest("$baseUrl/api/v1/books?read_status=IN_PROGRESS&size=500&page=$pageNumber", config)
+                val page = okHttpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        return@withContext Result.failure(IOException("HTTP ${response.code}: ${response.message}"))
+                    }
+                    json.decodeFromString<PageResponseDto<BookDto>>(response.body?.string().orEmpty())
+                }
+                books.addAll(page.content)
+                pageNumber++
+            } while (pageNumber < page.totalPages)
+            Result.success(books)
+        } catch (e: IOException) {
+            Result.failure(e)
+        } catch (e: kotlinx.serialization.SerializationException) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun getBook(config: ServerConfig, bookId: String): Result<BookDto> = withContext(Dispatchers.IO) {
         val baseUrl = config.serverUrl.trim().removeSuffix("/")
         val url = "$baseUrl/api/v1/books/$bookId"

@@ -18,6 +18,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import com.sunvader.komgasun.ui.reader.readerPageWindow
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.delay
 
 sealed interface PdfSourceMode {
     data object StreamFromKomga : PdfSourceMode
@@ -48,12 +52,10 @@ class PdfReaderViewModel(
 
     private var pdfRenderer: PdfRenderer? = null
     private var pfd: ParcelFileDescriptor? = null
-    private val bitmapCache = mutableMapOf<Int, Bitmap>()
+    private val rendererLock = Any()
+    private var rendererGeneration = 0
+    private val bitmapCache = PdfPageCache<Bitmap>(32L * 1024 * 1024) { it.allocationByteCount.toLong() }
     private var lastSyncedPage: Int = -1
-
-    init {
-        initReader()
-    }
 
     fun initReader() {
         _uiState.update { it.copy(isLoading = true, isReady = false, errorMessage = null) }
@@ -145,7 +147,7 @@ class PdfReaderViewModel(
         }
     }
 
-    private fun setupNativeRenderer(file: File) {
+    private fun setupNativeRenderer(file: File) = synchronized(rendererLock) {
         try {
             closeRenderer()
             val descriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
@@ -208,20 +210,43 @@ class PdfReaderViewModel(
         lastSyncedPage = -1
     }
 
-    suspend fun renderPageBitmap(pageIndex: Int): Bitmap? = withContext(Dispatchers.IO) {
-        bitmapCache[pageIndex]?.let { return@withContext it }
-        val renderer = pdfRenderer ?: return@withContext null
-        if (pageIndex < 0 || pageIndex >= renderer.pageCount) return@withContext null
+    suspend fun preloadPages(current: Int) {
+        val generation = synchronized(rendererLock) { rendererGeneration }
+        val total = (_uiState.value.mode as? PdfSourceMode.NativeRenderer)?.totalPages ?: return
+        synchronized(rendererLock) { bitmapCache.retain(readerPageWindow(current, total)) }
+        // Render current first; cancellation is checked between each serialized render.
+        readerPageWindow(current, total).forEach { page ->
+            currentCoroutineContext().ensureActive()
+            if (page != current) delay(50)
+            renderPageBitmap(page, generation)
+        }
+    }
 
-        synchronized(renderer) {
-            val page = renderer.openPage(pageIndex)
-            val width = (page.width * 1.5f).toInt()
-            val height = (page.height * 1.5f).toInt()
-            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-            page.close()
-            bitmapCache[pageIndex] = bitmap
-            bitmap
+    suspend fun renderPageBitmap(pageIndex: Int): Bitmap? =
+        renderPageBitmap(pageIndex, synchronized(rendererLock) { rendererGeneration })
+
+    private suspend fun renderPageBitmap(pageIndex: Int, generation: Int): Bitmap? = withContext(Dispatchers.IO) {
+        val coroutineContext = currentCoroutineContext()
+        coroutineContext.ensureActive()
+        synchronized(rendererLock) {
+            coroutineContext.ensureActive()
+            if (generation != rendererGeneration) return@synchronized null
+            bitmapCache[pageIndex]?.let { return@synchronized it }
+            val renderer = pdfRenderer ?: return@synchronized null
+            if (pageIndex !in 0 until renderer.pageCount) return@synchronized null
+            renderer.openPage(pageIndex).use { page ->
+                // Bound even a single oversized page to about 16 MiB (ARGB).
+                val scale = minOf(1.5, kotlin.math.sqrt(4_000_000.0 / (page.width.toDouble() * page.height)))
+                val bitmap = Bitmap.createBitmap(
+                    (page.width * scale).toInt().coerceAtLeast(1),
+                    (page.height * scale).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888
+                )
+                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                if (pageIndex in readerPageWindow(_uiState.value.currentPage, renderer.pageCount)) {
+                    bitmapCache.put(pageIndex, bitmap)
+                }
+                bitmap
+            }
         }
     }
 
@@ -229,15 +254,13 @@ class PdfReaderViewModel(
         _uiState.update { it.copy(showControls = !it.showControls) }
     }
 
-    private fun closeRenderer() {
-        bitmapCache.values.forEach { it.recycle() }
+    private fun closeRenderer() = synchronized(rendererLock) {
+        rendererGeneration++
         bitmapCache.clear()
-        try {
-            pdfRenderer?.close()
-            pdfRenderer = null
-            pfd?.close()
-            pfd = null
-        } catch (_: Exception) {}
+        try { pdfRenderer?.close() } catch (_: Exception) {}
+        pdfRenderer = null
+        try { pfd?.close() } catch (_: Exception) {}
+        pfd = null
     }
 
     override fun onCleared() {

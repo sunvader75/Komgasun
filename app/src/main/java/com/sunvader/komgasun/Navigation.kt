@@ -63,6 +63,15 @@ private fun AppNavigationGraph(startKey: NavKey) {
 
             entry<LibrariesNavKey> {
                 LibrariesScreen(
+                    onBookClick = { book ->
+                        val title = book.metadata.title.ifBlank { book.name }
+                        val reader: NavKey = when (book.detectBookType()) {
+                            BookType.PDF -> PdfReaderNavKey(book.id, title)
+                            BookType.EPUB -> EpubReaderNavKey(book.id, title)
+                            BookType.COMIC, BookType.UNKNOWN -> ComicReaderNavKey(book.id, title)
+                        }
+                        backStack.add(reader)
+                    },
                     onLibraryClick = { libId, libName ->
                         backStack.add(SeriesNavKey(libId, libName))
                     },

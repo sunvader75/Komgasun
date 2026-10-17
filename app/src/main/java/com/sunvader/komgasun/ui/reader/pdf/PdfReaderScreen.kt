@@ -62,7 +62,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.SubcomposeAsyncImage
-import coil.request.ImageRequest
+import com.sunvader.komgasun.ui.reader.PagePreloader
+import com.sunvader.komgasun.ui.reader.readerPageRequest
 import com.sunvader.komgasun.KomgasunApp
 import com.sunvader.komgasun.R
 import com.sunvader.komgasun.data.remote.KomgaApiClient
@@ -217,6 +218,18 @@ fun PdfReaderScreen(
                         viewModel.onPageChanged(pagerState.currentPage, totalPages)
                     }
 
+                    if (state.mode is PdfSourceMode.StreamFromKomga) {
+                        val urls = remember(state.streamPages, state.serverUrl, bookId) {
+                            state.streamPages.map { KomgaApiClient.getPageImageUrl(state.serverUrl, bookId, it.number) }
+                        }
+                        PagePreloader(pagerState.currentPage, urls)
+                    }
+                    LaunchedEffect(pagerState.currentPage, state.mode) {
+                        if (state.mode is PdfSourceMode.NativeRenderer) {
+                            viewModel.preloadPages(pagerState.currentPage)
+                        }
+                    }
+
                     HorizontalPager(
                         state = pagerState,
                         modifier = Modifier.fillMaxSize(),
@@ -284,10 +297,7 @@ fun PdfReaderScreen(
                                     }
                                 ) {
                                     SubcomposeAsyncImage(
-                                        model = ImageRequest.Builder(LocalContext.current)
-                                            .data(imageUrl)
-                                            .crossfade(true)
-                                            .build(),
+                                        model = readerPageRequest(LocalContext.current, imageUrl),
                                         contentDescription = "Página $pageNumber",
                                         contentScale = ContentScale.Fit,
                                         loading = {

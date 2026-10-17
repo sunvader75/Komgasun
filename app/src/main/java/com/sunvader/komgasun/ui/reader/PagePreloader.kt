@@ -14,13 +14,15 @@ fun readerPageRequest(context: Context, url: String): ImageRequest =
     ImageRequest.Builder(context).data(url).size(Size.ORIGINAL).crossfade(true).build()
 
 @Composable
-fun PagePreloader(current: Int, urls: List<String>) {
+fun PagePreloader(current: Int, urls: List<String>, diagnostics: ReaderDiagnostics? = null) {
     val context = LocalContext.current
     LaunchedEffect(current, urls) {
         // Give the visible request a head start; a new page cancels obsolete work.
         delay(150)
         readerPageWindow(current, urls.size).drop(1).forEach { page ->
-            context.imageLoader.execute(readerPageRequest(context, urls[page]))
+            val request = readerPageRequest(context, urls[page])
+            context.imageLoader.execute(if (diagnostics == null) request else request.newBuilder()
+                .listener(diagnostics.requestListener(page + 1, ReaderDiagnostics.Kind.PRELOAD)).build())
         }
     }
 }

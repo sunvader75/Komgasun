@@ -56,7 +56,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.SubcomposeAsyncImage
-import com.sunvader.komgasun.ui.reader.PagePreloader
+import coil.imageLoader
+import com.sunvader.komgasun.ui.reader.ReaderDiagnostics
+import com.sunvader.komgasun.ui.reader.requestListener
+import coil.request.SuccessResult
+import coil.request.ErrorResult
+import androidx.compose.runtime.collectAsState
 import com.sunvader.komgasun.ui.reader.readerPageRequest
 import com.sunvader.komgasun.R
 import com.sunvader.komgasun.data.remote.KomgaApiClient
@@ -75,6 +80,8 @@ fun ComicReaderScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    val diagnostics = remember(bookId) { ReaderDiagnostics() }
+    val imageLoader = LocalContext.current.imageLoader
     ComicImmersiveMode()
 
     LaunchedEffect(bookId) {
@@ -177,7 +184,24 @@ fun ComicReaderScreen(
                 val pageUrls = remember(pages, state.serverUrl, bookId) {
                     pages.map { KomgaApiClient.getPageImageUrl(state.serverUrl, bookId, it.number) }
                 }
-                PagePreloader(pagerState.currentPage, pageUrls)
+                val context = LocalContext.current
+                val loader = remember(pageUrls, imageLoader, diagnostics) {
+                    ComicPageLoader(scope, pageUrls.size) { index ->
+                        val request = readerPageRequest(context, pageUrls[index]).newBuilder()
+                            .listener(diagnostics.requestListener(pages[index].number,
+                                if (index == pagerState.currentPage) ReaderDiagnostics.Kind.VISIBLE else ReaderDiagnostics.Kind.PRELOAD))
+                            .build()
+                        when (val result = imageLoader.execute(request)) {
+                            is SuccessResult -> result
+                            is ErrorResult -> throw result.throwable
+                        }
+                    }
+                }
+                DisposableEffect(loader) { onDispose { loader.close() } }
+                LaunchedEffect(loader, pagerState.currentPage) { loader.moveTo(pagerState.currentPage) }
+                val loadedPages by loader.pages.collectAsState()
+                // Only a successful visible composition hides diagnostics, not merely a prefetch.
+                var displayedPage by remember(loader) { mutableStateOf<Int?>(null) }
 
                 HorizontalPager(
                     state = pagerState,
@@ -186,8 +210,7 @@ fun ComicReaderScreen(
                     key = { pages[it].number }
                 ) { pageIndex ->
                     val page = pages[pageIndex]
-                    val imageUrl = KomgaApiClient.getPageImageUrl(state.serverUrl, bookId, page.number)
-
+                    val loaded = loadedPages[pageIndex]
                     ZoomableBox(
                         modifier = Modifier.fillMaxSize(),
                         resetKey = pageIndex,
@@ -203,11 +226,28 @@ fun ComicReaderScreen(
                             }
                         }
                     ) {
-                        SubcomposeAsyncImage(
-                            model = readerPageRequest(LocalContext.current, imageUrl),
+                        if (loaded?.value == null) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                if (loaded?.error != null) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("Error al cargar página ${page.number}", color = Color.White)
+                                        IconButton(onClick = { loader.retry(pageIndex) }) {
+                                            Icon(Icons.Default.Refresh, contentDescription = "Reintentar", tint = Color.White)
+                                        }
+                                    }
+                                } else CircularProgressIndicator(modifier = Modifier.size(36.dp))
+                            }
+                        } else SubcomposeAsyncImage(
+                            // Drawable result: Coil cannot issue another NETWORK request here.
+                            model = loaded.value.drawable,
+                            onSuccess = { if (pageIndex == pagerState.currentPage) displayedPage = pageIndex },
+                            imageLoader = imageLoader,
                             contentDescription = "Página ${page.number}",
                             contentScale = ContentScale.Fit,
                             success = {
+                                androidx.compose.runtime.SideEffect {
+                                    if (pageIndex == pagerState.currentPage) displayedPage = pageIndex
+                                }
                                 ComicPageContent(scrollEnabled = !isCurrentPageZoomed && !isMultiTouchActive)
                             },
                             loading = {
@@ -242,6 +282,14 @@ fun ComicReaderScreen(
                         )
                     }
                 }
+
+                ComicDiagnosticsPanel(
+                    pageDisplayed = loadedPages[pagerState.currentPage]?.value != null && displayedPage == pagerState.currentPage,
+                    diagnostics = diagnostics,
+                    page = pages[pagerState.currentPage].number,
+                    memory = { imageLoader.memoryCache?.let { it.size.toLong() to it.maxSize.toLong() } ?: (null to null) },
+                    modifier = Modifier.align(Alignment.CenterEnd).fillMaxWidth(0.85f)
+                )
 
                 // Top Controls Overlay
                 AnimatedVisibility(

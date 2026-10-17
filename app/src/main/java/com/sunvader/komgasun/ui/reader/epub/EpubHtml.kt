@@ -10,9 +10,29 @@ object EpubHtml {
 
     // DOMParser produces an inert tree. Active elements and attributes are removed before adoption.
     // CSP is a second boundary, including for publication CSS URLs; no inline script is trusted.
-    fun install(quotedHtml: String): String = """
+    fun install(quotedHtml: String, quotedRasterUrls: String = "[]"): String = """
         (function(){
           const parsed=new DOMParser().parseFromString($quotedHtml,'text/html');
+          // Only a passive SVG containing one raster image is translated; never adopt SVG nodes.
+          const allowedRasterUrls=new Set($quotedRasterUrls);
+          parsed.querySelectorAll('svg').forEach(svg=>{
+            const passive=(node,allowed)=>Array.from(node.attributes).every(a=>allowed.includes(a.name));
+            if(svg.namespaceURI!=='http://www.w3.org/2000/svg' ||
+              !passive(svg,['xmlns','xmlns:xlink','width','height','viewBox','preserveAspectRatio']) ||
+              svg.children.length!==1 || Array.from(svg.childNodes).some(n=>n.nodeType===3 && n.textContent.trim()))return;
+            const image=svg.children[0];
+            if(image.localName!=='image' || image.namespaceURI!==svg.namespaceURI || image.childNodes.length!==0 ||
+              !passive(image,['width','height','href','xlink:href']))return;
+            const refs=['href','xlink:href'].filter(a=>image.hasAttribute(a));
+            if(refs.length!==1)return;
+            const ref=image.getAttribute(refs[0]);
+            // Reject schemes, absolute paths, query/fragment and encoded traversal before URL normalization.
+            if(!ref || ref!==ref.trim() || /[:\\?#%]/.test(ref) || ref.startsWith('/') || ref.split('/').some(p=>p==='.'||p==='..'||!p))return;
+            let url;try{url=new URL(ref,document.baseURI);}catch(e){return;}
+            if(url.protocol!=='https:' || url.origin!=='https://epub.invalid' || url.search || url.hash || !allowedRasterUrls.has(url.href))return;
+            const img=document.createElement('img');img.setAttribute('src',url.href);
+            svg.replaceWith(img);
+          });
           parsed.querySelectorAll('script,base,meta,iframe,frame,frameset,object,embed,applet,form,input,button,textarea,select,svg,math,audio,video,source').forEach(e=>e.remove());
           parsed.querySelectorAll('*').forEach(e=>Array.from(e.attributes).forEach(a=>{
             if(a.name.toLowerCase().startsWith('on') || ['srcdoc','action','formaction','target','download','autofocus','loading','id','name'].includes(a.name.toLowerCase())) e.removeAttribute(a.name);

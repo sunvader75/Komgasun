@@ -28,7 +28,12 @@ class EpubWebViewTest {
     @Test fun paginatedResourcesSecurityAndReflow() {
         val file = File.createTempFile("epub-webview-", ".epub")
         try {
-            val html = """<html><head><link rel="stylesheet" href="style.css"><base href="https://evil.invalid/"><meta http-equiv="refresh" content="0;url=file:///etc/passwd"></head><body onload="window.pwned=1"><script>window.pwned=1</script><script src="https://evil.invalid/test.js"></script><iframe src="file:///etc/passwd"></iframe><img src="pixel.png">${"<p>Reading text for horizontal pages with reflow.</p>".repeat(120)}</body></html>"""
+            fun cover(source: String = "pixel.png", extra: String = "", attributes: String = "") =
+                """<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="100%" height="100%" viewBox="0 0 1264 1920" preserveAspectRatio="none" $attributes><image width="1264" height="1920" xlink:href="$source"/>$extra</svg>"""
+            val covers = cover() + listOf("https://evil.invalid/a.png", "data:image/png;base64,AA==", "file:///a.png", "content://a", "../pixel.png", "%70ixel.png", "missing.png", "pixel.png?x=1", "pixel.png#x").joinToString("") { cover(it) } +
+                cover(extra = "<script>window.pwned=1</script>") + cover(extra = "<foreignObject><img src='pixel.png'/></foreignObject>") +
+                cover(extra = "<animate/>") + cover(attributes = "onload='window.pwned=1'") + cover(attributes = "style='display:none'")
+            val html = """<html><head><link rel="stylesheet" href="style.css"><base href="https://evil.invalid/"><meta http-equiv="refresh" content="0;url=file:///etc/passwd"></head><body onload="window.pwned=1"><script>window.pwned=1</script><script src="https://evil.invalid/test.js"></script><iframe src="file:///etc/passwd"></iframe><img src="pixel.png">$covers${"<p>Reading text for horizontal pages with reflow.</p>".repeat(120)}</body></html>"""
             val entries = mapOf(
                 "META-INF/container.xml" to "<container xmlns='urn:oasis:names:tc:opendocument:xmlns:container'><rootfiles><rootfile full-path='book.opf'/></rootfiles></container>".toByteArray(),
                 "book.opf" to "<package xmlns='http://www.idpf.org/2007/opf'><manifest><item id='a' href='a.html' media-type='text/html'/><item id='b' href='b.html' media-type='text/html'/><item id='css' href='style.css' media-type='text/css'/><item id='img' href='pixel.png' media-type='image/png'/></manifest><spine><itemref idref='a'/><itemref idref='b'/></spine></package>".toByteArray(),
@@ -79,13 +84,24 @@ class EpubWebViewTest {
             assertEquals("null", js(web, "window.pwned || null"))
             assertEquals("0", js(web, "document.querySelectorAll('script,base,meta[http-equiv=refresh],iframe').length"))
             assertEquals("true", js(web, "document.querySelector('img').complete && document.querySelector('img').naturalWidth>0"))
-            assertEquals("\"rgb(12, 34, 56)\"", js(web, "getComputedStyle(document.querySelector('p')).color"))
+            assertEquals("2", js(web, "document.querySelectorAll('img').length"))
+            assertEquals("true", js(web, "Array.from(document.querySelectorAll('img')).every(i=>i.complete && i.naturalWidth>0)"))
+            assertEquals("true", js(web, "document.querySelectorAll('img')[0].getAttribute('src')==='pixel.png'"))
+            assertEquals("true", js(web, "document.querySelectorAll('img')[1].attributes.length===1 && document.querySelectorAll('img')[1].src==='https://epub.invalid/pixel.png'"))
+            assertEquals("0", js(web, "document.querySelectorAll('svg,foreignObject,animate').length"))
+            assertEquals("\"rgb(12, 34, 56)\"",  js(web, "getComputedStyle(document.querySelector('p')).color"))
             compose.runOnIdle {
                 assertEquals(403, web.resource(Uri.parse("https://evil.invalid/style.css")).statusCode)
                 assertEquals(403, web.resource(Uri.parse("file:///etc/passwd")).statusCode)
                 assertEquals(403, web.resource(Uri.parse("https://epub.invalid/%73tyle.css")).statusCode)
                 assertEquals(403, web.resource(Uri.parse("https://epub.invalid/a.html")).statusCode)
                 assertEquals(200, web.resource(Uri.parse("https://epub.invalid/style.css")).statusCode)
+                val raster = web.resource(Uri.parse("https://epub.invalid/pixel.png"))
+                assertEquals(200, raster.statusCode)
+                assertEquals("image/png", raster.mimeType)
+                assertTrue(raster.data.use { it.readBytes() }.contentEquals(entries.getValue("pixel.png")))
+                assertEquals(403, web.resource(Uri.parse("https://epub.invalid/missing.png")).statusCode)
+                assertEquals(403, web.resource(Uri.parse("https://epub.invalid/pixel.png?x=1")).statusCode)
             }
         } finally { file.delete() }
     }

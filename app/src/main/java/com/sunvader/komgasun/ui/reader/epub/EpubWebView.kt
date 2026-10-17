@@ -64,7 +64,10 @@ class EpubWebView(context: Context) : WebView(context) {
                 if (disposed || installed || url != chapterUrl()) return
                 val chapter = book?.chapters?.firstOrNull { it.resourcePath == chapterPath } ?: return
                 val captured = token
-                evaluateJavascript(EpubHtml.install(JSONObject.quote(chapter.htmlContent))) {
+                val rasterUrls = book?.publication?.mediaTypes.orEmpty()
+                    .filterValues { it in setOf("image/png", "image/jpeg", "image/gif", "image/webp") }
+                    .keys.map { path -> EpubHtml.ORIGIN + "/" + path.split('/').joinToString("/") { Uri.encode(it) } }
+                evaluateJavascript(EpubHtml.install(JSONObject.quote(chapter.htmlContent), JSONArray(rasterUrls).toString())) {
                     if (!disposed && token == captured && it == "true") {
                         installed = true
                         measurePage()

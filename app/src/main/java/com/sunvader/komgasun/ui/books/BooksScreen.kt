@@ -32,6 +32,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -358,6 +359,7 @@ fun BookGridItem(
         KomgaApiClient.getBookThumbnailUrl(serverUrl, book.id)
     } else ""
 
+    val readingStatus = book.readingStatus()
     val badgeText = book.formatBadge()
     val badgeColor = when (book.detectBookType()) {
         BookType.PDF -> MaterialTheme.colorScheme.error
@@ -415,6 +417,7 @@ fun BookGridItem(
                         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
                         shape = RoundedCornerShape(topStart = 8.dp),
                         modifier = Modifier.align(Alignment.BottomEnd)
+                            .padding(bottom = if (readingStatus.fraction != null) 6.dp else 0.dp)
                     ) {
                         Text(
                             text = "${book.media.pagesCount} p.",
@@ -426,39 +429,31 @@ fun BookGridItem(
                     }
                 }
 
-                // Top-End Read / Availability status badge
-                val statusText: String? = when {
-                    book.deleted || book.media.status.equals("UNAVAILABLE", true) || book.media.status.equals("ERROR", true) -> "No disp."
-                    book.readProgress?.completed == true -> "Leído"
-                    book.readProgress != null && book.readProgress.page > 0 -> "Pág. ${book.readProgress.page}"
-                    else -> null
-                }
-
-                if (statusText != null) {
-                    val statusBgColor = when (statusText) {
-                        "No disp." -> MaterialTheme.colorScheme.errorContainer
-                        "Leído" -> MaterialTheme.colorScheme.primaryContainer
-                        else -> MaterialTheme.colorScheme.tertiaryContainer
-                    }
-                    val statusTextColor = when (statusText) {
-                        "No disp." -> MaterialTheme.colorScheme.onErrorContainer
-                        "Leído" -> MaterialTheme.colorScheme.onPrimaryContainer
-                        else -> MaterialTheme.colorScheme.onTertiaryContainer
-                    }
-
+                // Separate row below the format badge prevents collisions on narrow covers.
+                readingStatus.readBadge?.let { label ->
                     Surface(
-                        color = statusBgColor.copy(alpha = 0.9f),
-                        shape = RoundedCornerShape(bottomStart = 8.dp),
-                        modifier = Modifier.align(Alignment.TopEnd)
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 28.dp, end = 4.dp)
                     ) {
                         Text(
-                            text = statusText,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = statusTextColor,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            text = label,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
                         )
                     }
+                }
+                readingStatus.fraction?.let { fraction ->
+                    LinearProgressIndicator(
+                        progress = { fraction },
+                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(6.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surface,
+                        gapSize = 0.dp,
+                        drawStopIndicator = {}
+                    )
                 }
             }
 
@@ -476,6 +471,21 @@ fun BookGridItem(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
+
+                    readingStatus.detail?.let { detail ->
+                        Text(
+                            text = detail,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    if (readingStatus.unavailable) {
+                        Text(
+                            text = "No disponible",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
 
                     if (book.metadata.number.isNotBlank()) {
                         Spacer(modifier = Modifier.height(2.dp))

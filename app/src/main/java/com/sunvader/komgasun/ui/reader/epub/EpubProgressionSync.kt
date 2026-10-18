@@ -26,7 +26,7 @@ object EpubProgressionSync {
         return try { formatter().parse(normalized)?.time } catch (_: Exception) { null }
     }
 
-    fun href(path: String): String = URI(null, null, "/$path", null).toASCIIString().removePrefix("/").replace(":", "%3A")
+    fun href(path: String): String = URI(null, null, "/$path", null).toASCIIString().removePrefix("/").replace(":", "%3A").replace("+", "%2B")
 
     /**
      * Maps continuous reading proportion [0.0..1.0] to a discrete Readium progression
@@ -50,9 +50,9 @@ object EpubProgressionSync {
         return (progression.coerceIn(0.0, 1.0) * count / (count - 1)).coerceIn(0.0, 1.0)
     }
 
-    fun resume(paths: List<String>, local: String?, remote: EpubProgressionDto?, sizes: List<Long> = emptyList()): Pair<Int, Double> {
+    fun resume(paths: List<String>, local: String?, remote: EpubProgressionDto?, sizes: List<Long> = emptyList(), positions: EpubServerPositions? = null): Pair<Int, Double> {
         val saved = EpubReaderStorage.decodeLocator(local, paths.size)
-        val position = remotePosition(paths, remote, sizes)
+        val position = remotePosition(paths, remote, sizes, positions)
         val remoteTime = epoch(remote?.modified)
         val localTime = epoch(local?.split(':', limit = 3)?.getOrNull(2))
         if (position != null && remoteTime != null) {
@@ -62,7 +62,7 @@ object EpubProgressionSync {
         return saved ?: (0 to 0.0)
     }
 
-    fun remotePosition(paths: List<String>, remote: EpubProgressionDto?, sizes: List<Long> = emptyList()): Pair<Int, Double>? {
+    fun remotePosition(paths: List<String>, remote: EpubProgressionDto?, sizes: List<Long> = emptyList(), positions: EpubServerPositions? = null): Pair<Int, Double>? {
         val fraction = remote?.locator?.locations?.progression
         val path = try {
             val uri = URI(remote?.locator?.href ?: "")
@@ -73,7 +73,8 @@ object EpubProgressionSync {
             return null
         }
         val size = sizes.getOrNull(index) ?: 0L
-        val proportion = if (size > 1024L) continuousProportion(fraction, size) else fraction
+        val proportion = positions?.proportion(index, fraction)
+            ?: if (size > 1024L) continuousProportion(fraction, size) else fraction
         return index to proportion
     }
 }

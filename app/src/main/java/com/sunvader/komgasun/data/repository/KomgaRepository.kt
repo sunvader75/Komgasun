@@ -122,6 +122,9 @@ class KomgaRepository(
     }
 
     // Explicit captured configuration prevents queued EPUB writes from switching account/server.
+    suspend fun getEpubPositions(config: ServerConfig, bookId: String) =
+        apiClient.getEpubPositions(config, bookId)
+
     suspend fun getEpubProgression(config: ServerConfig, bookId: String) =
         apiClient.getEpubProgression(config, bookId)
 

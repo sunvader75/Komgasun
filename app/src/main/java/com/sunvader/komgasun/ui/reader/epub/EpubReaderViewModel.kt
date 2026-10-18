@@ -60,6 +60,7 @@ class EpubReaderViewModel(
     private var sessionConfig: ServerConfig? = null
     private var syncQueue: EpubProgressionQueue? = null
     private var bookPages: EpubBookPageMap? = null
+    private var serverPositions: EpubServerPositions? = null
     private val syncMutex = Mutex()
     private val devicePreferences = application.getSharedPreferences("epub_sync_device", 0)
     private val deviceId: String = devicePreferences.getString("id", null) ?: UUID.randomUUID().toString().also {
@@ -74,6 +75,7 @@ class EpubReaderViewModel(
         syncQueue?.close()
         syncQueue = null
         sessionConfig = null
+        serverPositions = null
         bookPages = null
         identity = null
         _uiState.update { it.copy(isLoading = true, isReady = false, pageCount = 0, errorMessage = null, syncStatus = null) }
@@ -119,22 +121,32 @@ class EpubReaderViewModel(
                 }
                 ensureActive()
                 if (sessionToken != session) return@launch
+                val paths = book.chapters.map { it.resourcePath.orEmpty() }
+                val sizes = book.chapters.map { it.resourceBytes }
+                val published: Result<EpubServerPositions> = if (remote.isSuccess) syncMutex.withLock {
+                    ensureActive()
+                    check(repository.getActiveConfig() == config) { "La sesión ha cambiado" }
+                    repository.getEpubPositions(config, bookId).mapCatching { EpubServerPositions.create(paths, it) }
+                } else Result.failure(remote.exceptionOrNull() ?: IllegalStateException("Progreso remoto no disponible"))
+                ensureActive()
+                if (sessionToken != session) return@launch
                 val local = preferences.getString(key, null)
-                val saved = EpubProgressionSync.resume(book.chapters.map { it.resourcePath.orEmpty() }, local, remote.getOrNull(), book.chapters.map { it.resourceBytes })
+                val saved = EpubProgressionSync.resume(paths, local, remote.getOrNull(), sizes, published.getOrNull())
                 check(repository.getActiveConfig() == config) { "La sesión ha cambiado; vuelve a abrir el libro" }
                 identity = key
                 sessionConfig = config
+                serverPositions = published.getOrNull()
                 lastPosition = saved
                 positionChangedByReader = false
                 // Cache the selected remote locator with its original time, never 'now'.
                 val remoteValue = remote.getOrNull()
                 if (remoteValue != null && (EpubProgressionSync.epoch(local?.split(':', limit = 3)?.getOrNull(2)) ?: 0L) <= (EpubProgressionSync.epoch(remoteValue.modified) ?: 0L)
-                    && saved == EpubProgressionSync.remotePosition(book.chapters.map { it.resourcePath.orEmpty() }, remoteValue, book.chapters.map { it.resourceBytes })) {
+                    && saved == EpubProgressionSync.remotePosition(paths, remoteValue, sizes, published.getOrNull())) {
                     saveLocal(key, "${saved.first}:${saved.second}:${remoteValue.modified}")
                 }
                 lastModified = maxOf(EpubProgressionSync.epoch(remote.getOrNull()?.modified) ?: 0L,
                     EpubProgressionSync.epoch(local?.split(':', limit = 3)?.getOrNull(2)) ?: 0L)
-                if (remote.isSuccess) {
+                if (remote.isSuccess && published.isSuccess) {
                     syncQueue = EpubProgressionQueue(viewModelScope, send = { value ->
                         syncMutex.withLock {
                             ensureActive()
@@ -157,7 +169,8 @@ class EpubReaderViewModel(
                     epubBook = book, currentChapterIndex = saved.first,
                     syncStatus = when {
                         remote.isFailure -> syncFailure(remote.exceptionOrNull())
-                        remoteValue != null && EpubProgressionSync.remotePosition(book.chapters.map { it.resourcePath.orEmpty() }, remoteValue, book.chapters.map { it.resourceBytes }) == null -> "Posición remota no válida o capítulo desconocido; se usa la posición local."
+                        published.isFailure -> "Progreso solo local: no se pudieron obtener posiciones válidas de Komga para este EPUB. Vuelve a abrir el libro para reintentar."
+                        remoteValue != null && EpubProgressionSync.remotePosition(paths, remoteValue, sizes, published.getOrNull()) == null -> "Posición remota no válida o capítulo desconocido; se usa la posición local."
                         else -> null
                     },
                     page = 0, pageCount = 0, proportion = saved.second, chapterGeneration = token) }
@@ -165,6 +178,7 @@ class EpubReaderViewModel(
                     if (active != config) {
                         identity = null
                         sessionConfig = null
+                        serverPositions = null
                         ++session
                         syncQueue?.close()
                         syncQueue = null
@@ -245,12 +259,9 @@ class EpubReaderViewModel(
         val modified = EpubProgressionSync.timestamp(lastModified)
         identity?.let { saveLocal(it, "${state.currentChapterIndex}:${state.proportion}:$modified") }
         val book = state.epubBook ?: return
-        val chapter = book.chapters.getOrNull(state.currentChapterIndex) ?: return
-        val path = chapter.resourcePath ?: return
-        val type = book.publication?.mediaTypes?.get(path) ?: return
-        val progression = EpubProgressionSync.discreteProgression(state.proportion, chapter.resourceBytes)
-        syncQueue?.offer(EpubProgressionDto(modified, EpubDeviceDto(deviceId, "Komgasun"),
-            EpubLocatorDto(EpubProgressionSync.href(path), type, EpubLocationsDto(progression))))
+        if (state.currentChapterIndex !in book.chapters.indices) return
+        val locator = serverPositions?.locator(state.currentChapterIndex, state.proportion) ?: return
+        syncQueue?.offer(EpubProgressionDto(modified, EpubDeviceDto(deviceId, "Komgasun"), locator))
     }
 
     private fun saveLocal(key: String, locator: String) {
@@ -281,6 +292,7 @@ class EpubReaderViewModel(
         syncQueue?.close()
         syncQueue = null
         sessionConfig = null
+        serverPositions = null
         loadJob?.cancel()
         identity = null
         _uiState.update { it.copy(isReady = false, isLoading = true) }

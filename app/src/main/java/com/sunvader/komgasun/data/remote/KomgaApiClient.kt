@@ -224,6 +224,33 @@ class KomgaApiClient(
         }
     }
 
+    /** Read the server's actual analyzed position set; do not derive it from local ZIP sizes. */
+    suspend fun getEpubPositions(config: ServerConfig, bookId: String): Result<com.sunvader.komgasun.data.model.EpubPositionsDto> = withContext(Dispatchers.IO) {
+        val url = "${config.serverUrl.trim().removeSuffix("/")}/api/v1/books/$bookId/positions"
+        try {
+            okHttpClient.newCall(buildRequest(url, config)).execute().use { response ->
+                if (response.code != 200) return@withContext Result.failure(IOException("HTTP ${response.code}: ${response.message}"))
+                val body = response.body ?: throw IOException("Empty EPUB positions response")
+                val limit = 16 * 1024 * 1024
+                require(body.contentLength() <= limit) { "EPUB positions response too large" }
+                val bytes = java.io.ByteArrayOutputStream()
+                body.byteStream().use { input ->
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        require(bytes.size().toLong() + count <= limit) { "EPUB positions response too large" }
+                        bytes.write(buffer, 0, count)
+                    }
+                }
+                val positions = json.decodeFromString<com.sunvader.komgasun.data.model.EpubPositionsDto>(bytes.toString("UTF-8"))
+                require(positions.total in 1..100_000 && positions.total == positions.positions.size) { "Invalid EPUB positions response" }
+                Result.success(positions)
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (e: Exception) { Result.failure(e) }
+    }
+
     /** 204 means no saved locator; 404 is deliberately not treated as an empty position. */
     suspend fun getEpubProgression(config: ServerConfig, bookId: String): Result<com.sunvader.komgasun.data.model.EpubProgressionDto?> = withContext(Dispatchers.IO) {
         val url = "${config.serverUrl.trim().removeSuffix("/")}/api/v1/books/$bookId/progression"

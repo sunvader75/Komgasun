@@ -193,11 +193,11 @@ fun EpubReaderScreen(
                     Spacer(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(28.dp)
+                            .height(40.dp)
                             .clickable { viewModel.toggleControls() }
                     )
 
-                    // Book Content Box with generous Play Books margins (32dp horizontal)
+                    // Keep the reading area inset from the page edges.
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -221,7 +221,7 @@ fun EpubReaderScreen(
                                 .clickable { viewModel.movePage(1) }
                         )
 
-                        // Sized WebView with generous book margins (32dp sides, 6dp vertical)
+                        // Inset outside the WebView so pagination uses the available reading area.
                         AndroidView(
                             factory = { ctx ->
                                 EpubWebView(ctx).apply {
@@ -235,11 +235,11 @@ fun EpubReaderScreen(
                             onRelease = { it.dispose() },
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(horizontal = 32.dp, vertical = 6.dp)
+                                .padding(horizontal = 40.dp, vertical = 16.dp)
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     // Running Footer (Exact Google Play Books style from screenshot)
                     Row(
@@ -247,7 +247,7 @@ fun EpubReaderScreen(
                             .fillMaxWidth()
                             .height(28.dp)
                             .clickable { viewModel.toggleControls() }
-                            .padding(horizontal = 32.dp),
+                            .padding(horizontal = 40.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {

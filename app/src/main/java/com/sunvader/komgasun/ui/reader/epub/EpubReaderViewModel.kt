@@ -44,7 +44,10 @@ class EpubReaderViewModel(
     private val bookId: String,
     private val repository: KomgaRepository = KomgasunApp.instance.repository
 ) : AndroidViewModel(application) {
-    private val _uiState = MutableStateFlow(EpubReaderUiState())
+    private val readerPreferences = application.getSharedPreferences("epub_reader_settings", 0)
+    private val _uiState = MutableStateFlow(
+        EpubReaderUiState(isDarkTheme = readerPreferences.getBoolean("dark_theme", true))
+    )
     val uiState: StateFlow<EpubReaderUiState> = _uiState.asStateFlow()
     private val preferences = application.getSharedPreferences("epub_locators", 0)
     private var identity: String? = null
@@ -285,7 +288,11 @@ class EpubReaderViewModel(
     }
     fun increaseFontSize() { _uiState.update { it.copy(fontSizeSp = (it.fontSizeSp + 2).coerceAtMost(32), pageCount = 0) } }
     fun decreaseFontSize() { _uiState.update { it.copy(fontSizeSp = (it.fontSizeSp - 2).coerceAtLeast(12), pageCount = 0) } }
-    fun toggleTheme() { _uiState.update { it.copy(isDarkTheme = !it.isDarkTheme) } }
+    fun toggleTheme() {
+        val isDarkTheme = !_uiState.value.isDarkTheme
+        readerPreferences.edit().putBoolean("dark_theme", isDarkTheme).apply()
+        _uiState.update { it.copy(isDarkTheme = isDarkTheme) }
+    }
     fun deleteBookFile(onDone: (Result<Unit>) -> Unit) {
         viewModelScope.launch { onDone(repository.deleteBookFile(bookId)) }
     }

@@ -273,6 +273,20 @@ class EpubReaderViewModel(
             _uiState.update { it.copy(page = clamped, proportion = EpubPagination.proportion(clamped, it.pageCount)) }
         }
     }
+    fun seekBook(fraction: Float) {
+        val state = _uiState.value
+        val chapters = state.epubBook?.chapters?.size ?: 0
+        if (!state.isReady || chapters == 0 || !fraction.isFinite()) return
+        val (chapter, proportion) = EpubBookProgress.position(fraction.toDouble(), chapters)
+        positionChangedByReader = true
+        if (chapter == state.currentChapterIndex && state.pageCount > 0) {
+            seekPage(EpubPagination.page(proportion, state.pageCount))
+        } else {
+            _uiState.update { it.copy(currentChapterIndex = chapter, page = 0, pageCount = 0,
+                proportion = proportion, chapterGeneration = ++generation) }
+        }
+    }
+
     fun nextChapterDirect() {
         val state = _uiState.value
         val totalChapters = state.epubBook?.chapters?.size ?: 0

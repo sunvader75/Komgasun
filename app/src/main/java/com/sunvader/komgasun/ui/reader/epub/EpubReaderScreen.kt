@@ -90,7 +90,6 @@ fun EpubReaderScreen(
     val subduedColor = if (state.isDarkTheme) Color.White.copy(alpha = 0.55f) else Color.Black.copy(alpha = 0.55f)
     val overlayBg = if (state.isDarkTheme) Color(0xFF1E1E1E).copy(alpha = 0.95f) else Color.White.copy(alpha = 0.95f)
     val totalChapters = state.epubBook?.chapters?.size ?: 0
-    val chapterTitle = state.epubBook?.chapters?.getOrNull(state.currentChapterIndex)?.title
 
     if (showDeleteDialog) {
         AlertDialog(
@@ -326,15 +325,7 @@ fun EpubReaderScreen(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                if (!chapterTitle.isNullOrBlank()) {
-                                    Text(
-                                        text = chapterTitle,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = subduedColor,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
+
                             }
 
                             IconButton(onClick = viewModel::decreaseFontSize) {
@@ -403,16 +394,6 @@ fun EpubReaderScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (!chapterTitle.isNullOrBlank()) chapterTitle else "Capítulo ${state.currentChapterIndex + 1}",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = themeTextColor,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f, fill = false)
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(
                                     text = "Pág. ${state.page + 1}/${state.pageCount.coerceAtLeast(1)} · Cap. ${state.currentChapterIndex + 1}/$totalChapters",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = subduedColor
@@ -440,21 +421,17 @@ fun EpubReaderScreen(
                                     }
                                 }
 
-                                var sliderValue by remember(state.page, state.chapterGeneration) {
-                                    mutableFloatStateOf(state.page.toFloat())
+                                var sliderValue by remember(state.currentChapterIndex, state.proportion) {
+                                    mutableFloatStateOf(EpubBookProgress.fraction(
+                                        state.currentChapterIndex, state.proportion, totalChapters
+                                    ).toFloat())
                                 }
-                                val maxPage = (state.pageCount - 1).coerceAtLeast(0)
                                 Slider(
-                                    value = sliderValue.coerceIn(0f, maxPage.toFloat()),
-                                    onValueChange = { newVal ->
-                                        sliderValue = newVal
-                                        val target = newVal.toInt().coerceIn(0, maxPage)
-                                        if (target != state.page) {
-                                            viewModel.seekPage(target)
-                                        }
-                                    },
-                                    valueRange = 0f..maxPage.toFloat().coerceAtLeast(1f),
-                                    enabled = state.pageCount > 1,
+                                    value = sliderValue.coerceIn(0f, 1f),
+                                    onValueChange = { sliderValue = it },
+                                    onValueChangeFinished = { viewModel.seekBook(sliderValue) },
+                                    valueRange = 0f..1f,
+                                    enabled = state.isReady && totalChapters > 0,
                                     colors = SliderDefaults.colors(
                                         thumbColor = MaterialTheme.colorScheme.primary,
                                         activeTrackColor = MaterialTheme.colorScheme.primary,

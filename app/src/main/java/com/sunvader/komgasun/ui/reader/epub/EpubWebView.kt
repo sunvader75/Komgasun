@@ -19,6 +19,8 @@ open class EpubWebView(context: Context) : WebView(context) {
     var onMove: (Int) -> Unit = {}
     var onTap: () -> Unit = {}
     var onMeasured: (Long, Int, Int) -> Unit = { _, _, _ -> }
+    internal var onPaginationReady: ((Long, Int) -> Unit)? = null
+    internal var paginationPaused = false
     var onImageDiagnostics: (String) -> Unit = {}
     private var recovery = EpubImageRecovery(Long.MIN_VALUE)
     private val imageWorker = java.util.concurrent.ThreadPoolExecutor(
@@ -46,9 +48,11 @@ open class EpubWebView(context: Context) : WebView(context) {
     private val poll = object : Runnable {
         override fun run() {
             if (disposed) return
-            measurePage()
-            inspectImages()
-            postDelayed(this, 350)
+            if (!paginationPaused) {
+                measurePage()
+                inspectImages()
+            }
+            postDelayed(this, if (onPaginationReady != null && !paginationPaused) 50 else 350)
         }
     }
 
@@ -197,27 +201,42 @@ open class EpubWebView(context: Context) : WebView(context) {
     }
 
     private fun measurePage() {
-        if (!installed || disposed || width == 0 || height == 0 || callbackPending) return
+        if (!installed || disposed || paginationPaused || width == 0 || height == 0 || callbackPending) return
         callbackPending = true
         val captured = token
         val serial = ++evaluation
         val fraction = requestedFraction
         val capturedFont = font
         val capturedDark = dark
-        evaluateJavascript("window.__epub.apply($fraction,$font,$dark)") { result ->
+        val capturedWidth = width
+        val capturedHeight = height
+        val measuringBook = onPaginationReady != null
+        val script = if (measuringBook)
+            "(function(){const r=window.__epub.apply($fraction,$font,$dark);return [r[0],r[1],window.__epub.settled()];})()"
+        else "window.__epub.apply($fraction,$font,$dark)"
+        evaluateJavascript(script) { result ->
             android.util.Log.d("EpubDebug", "apply($fraction,$font,$dark) result=$result (w=$width, h=$height)")
             if (disposed || token != captured || serial != evaluation) return@evaluateJavascript
             callbackPending = false
             try {
                 val values = JSONArray(result)
-                if (values.length() != 2) return@evaluateJavascript
+                if (values.length() != if (measuringBook) 3 else 2) return@evaluateJavascript
                 val page = values.getDouble(0)
                 val count = values.getDouble(1)
                 if (!page.isFinite() || !count.isFinite() || page % 1.0 != 0.0 || count % 1.0 != 0.0 ||
                     count !in 1.0..100000.0 || page < 0 || page >= count) return@evaluateJavascript
                 // A newer state must not be overwritten by an older async layout callback.
-                if (fraction != requestedFraction || capturedFont != font || capturedDark != dark) { measurePage(); return@evaluateJavascript }
+                if (fraction != requestedFraction || capturedFont != font || capturedDark != dark ||
+                    (measuringBook && (capturedWidth != width || capturedHeight != height))) {
+                    measurePage()
+                    return@evaluateJavascript
+                }
                 onMeasured(captured, page.toInt(), count.toInt())
+                // CSS, images and fonts have settled; scrollWidth already forced layout.
+                // No arbitrary per-chapter delay is needed for this derived count.
+                if (measuringBook && values.getBoolean(2)) {
+                    onPaginationReady?.invoke(captured, count.toInt())
+                }
             } catch (_: Exception) { /* Ignore malformed/stale callbacks, never persist them. */ }
         }
     }
@@ -325,6 +344,7 @@ open class EpubWebView(context: Context) : WebView(context) {
         onMove = {}
         onTap = {}
         onMeasured = { _, _, _ -> }
+        onPaginationReady = null
         stopLoading()
         webViewClient = WebViewClient()
         destroy()

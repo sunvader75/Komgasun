@@ -81,7 +81,9 @@ object EpubHtml {
           const images=Array.from(pages.querySelectorAll('img'));
           const validatedSources=images.map(e=>e.getAttribute('src') || '');
           const started=performance.now(), retried=new Set();
-          const api={images:function(){return images.slice(0,256).map((e,i)=>{
+          const api={settled:function(){
+            return pendingStyles===0 && images.every(e=>e.complete && e.naturalWidth>0) && (!document.fonts || document.fonts.status==='loaded');
+          },images:function(){return images.slice(0,256).map((e,i)=>{
             const r=e.getBoundingClientRect();return [i,validatedSources[i],e.complete,e.naturalWidth,e.naturalHeight,Math.round(r.width),Math.round(r.height),performance.now()-started,sourceKinds.get(e)||'MISSING_ATTR',e.currentSrc?'CURRENT_SRC':'ATTR',allowedRasterUrls.size,$quotedChapterBase?'APP_CHAPTER':'DOCUMENT_FALLBACK'];
           });},recover:function(i,source){
             if(!Number.isInteger(i)||i<0||i>=images.length||retried.has(i)||!/^data:image\/(png|jpeg|jpg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(source))return false;

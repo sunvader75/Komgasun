@@ -13,6 +13,20 @@ class EpubPublication internal constructor(
     val packagePath: String,
     val mediaTypes: Map<String, String>
 ) {
+    /** Called on Dispatchers.IO; includes styles, fonts and images, not just chapter text. */
+    internal fun paginationFingerprint(): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().buffered().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
     fun resolve(basePath: String, reference: String): String = EpubPath.resolve(basePath, reference)
 
     /** basePath is a decoded canonical ZIP member; reference is a relative URI (possibly fragmented). */

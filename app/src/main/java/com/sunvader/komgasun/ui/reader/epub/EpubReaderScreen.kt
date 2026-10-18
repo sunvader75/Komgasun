@@ -1,5 +1,8 @@
 package com.sunvader.komgasun.ui.reader.epub
 
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -39,8 +42,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,7 +49,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -69,7 +69,7 @@ import com.sunvader.komgasun.ui.common.LoadingView
 import com.sunvader.komgasun.ui.reader.ReaderLoadStatus
 import com.sunvader.komgasun.ui.reader.readerLoadStatus
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun EpubReaderScreen(
     bookId: String,
@@ -90,6 +90,14 @@ fun EpubReaderScreen(
     val subduedColor = if (state.isDarkTheme) Color.White.copy(alpha = 0.55f) else Color.Black.copy(alpha = 0.55f)
     val overlayBg = if (state.isDarkTheme) Color(0xFF1E1E1E).copy(alpha = 0.95f) else Color.White.copy(alpha = 0.95f)
     val totalChapters = state.epubBook?.chapters?.size ?: 0
+    var bookPageMap by remember(state.epubBook, state.fontSizeSp) {
+        mutableStateOf<EpubBookPageMap?>(null)
+    }
+    var paginationFailed by remember(state.epubBook, state.fontSizeSp) {
+        mutableStateOf(false)
+    }
+
+    var measuredChapters by remember(state.epubBook, state.fontSizeSp) { mutableStateOf(0) }
 
     if (showDeleteDialog) {
         AlertDialog(
@@ -185,8 +193,7 @@ fun EpubReaderScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .statusBarsPadding()
-                        .navigationBarsPadding()
+                        .windowInsetsPadding(WindowInsets.systemBarsIgnoringVisibility)
                 ) {
                     // Top margin space (clean reading immersion like Play Books)
                     Spacer(
@@ -202,6 +209,21 @@ fun EpubReaderScreen(
                             .weight(1f)
                             .fillMaxWidth()
                     ) {
+                        // Measure offscreen chapters in a separate, identically sized reader.
+                        AndroidView(
+                            factory = { EpubBookPaginator(it).apply { alpha = 0f } },
+                            update = { paginator ->
+                                paginator.onPageMap = { pages, failed ->
+                                    bookPageMap = pages
+                                    paginationFailed = failed
+                                }
+                                paginator.onProgress = { done, _ -> measuredChapters = done }
+                                state.epubBook?.let { paginator.paginate(it, state.fontSizeSp, state.isDarkTheme) }
+                            },
+                            onRelease = { it.release() },
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 16.dp)
+                        )
+
                         // Left edge tap zone for previous page
                         Box(
                             modifier = Modifier
@@ -387,21 +409,7 @@ fun EpubReaderScreen(
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            // Chapter Title and Page Info
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "Pág. ${state.page + 1}/${state.pageCount.coerceAtLeast(1)} · Cap. ${state.currentChapterIndex + 1}/$totalChapters",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = subduedColor
-                                )
-                            }
-
-                            Spacer(Modifier.height(4.dp))
-
+                            val pages = bookPageMap
                             // Scrubber Slider + Direct Chapter Navigation Buttons
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -421,22 +429,20 @@ fun EpubReaderScreen(
                                     }
                                 }
 
-                                var sliderValue by remember(state.currentChapterIndex, state.proportion) {
-                                    mutableFloatStateOf(EpubBookProgress.fraction(
-                                        state.currentChapterIndex, state.proportion, totalChapters
-                                    ).toFloat())
-                                }
-                                Slider(
-                                    value = sliderValue.coerceIn(0f, 1f),
-                                    onValueChange = { sliderValue = it },
-                                    onValueChangeFinished = { viewModel.seekBook(sliderValue) },
-                                    valueRange = 0f..1f,
-                                    enabled = state.isReady && totalChapters > 0,
-                                    colors = SliderDefaults.colors(
-                                        thumbColor = MaterialTheme.colorScheme.primary,
-                                        activeTrackColor = MaterialTheme.colorScheme.primary,
-                                        inactiveTrackColor = if (state.isDarkTheme) Color.DarkGray else Color.LightGray
-                                    ),
+                                EpubBookScrubber(
+                                    pages = pages,
+                                    currentPage = pages?.let {
+                                        val chapterPage = if (state.pageCount > 0) state.page else
+                                            EpubPagination.page(state.proportion, it.counts[state.currentChapterIndex])
+                                        it.absolutePage(state.currentChapterIndex, chapterPage)
+                                    } ?: 1,
+                                    ready = state.isReady,
+                                    failed = paginationFailed,
+                                    dark = state.isDarkTheme,
+                                    onSeek = { page -> pages?.let { viewModel.seekBookPage(page, it) } },
+                                    bookFraction = EpubBookProgress.fraction(state.currentChapterIndex, state.proportion, totalChapters).toFloat(),
+                                    onSeekFraction = viewModel::seekBook,
+                                    calculationProgress = "$measuredChapters / $totalChapters",
                                     modifier = Modifier.weight(1f)
                                 )
 

@@ -33,5 +33,9 @@ class EpubHtmlTest {
         assertTrue(bootstrap.contains("'version'"))
         assertTrue(bootstrap.contains("refs.length<1"))
     }
+    @Test fun svgCoverAllowsRelativePathParentNavigation() {
+        val bootstrap = EpubHtml.install("\"<svg></svg>\"")
+        assertFalse(bootstrap.contains("p==='..'"))
+    }
 }
 

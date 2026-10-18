@@ -146,7 +146,7 @@ class EpubReaderViewModel(
                 }
                 lastModified = maxOf(EpubProgressionSync.epoch(remote.getOrNull()?.modified) ?: 0L,
                     EpubProgressionSync.epoch(local?.split(':', limit = 3)?.getOrNull(2)) ?: 0L)
-                if (remote.isSuccess && published.isSuccess) {
+                if (remote.isSuccess) {
                     syncQueue = EpubProgressionQueue(viewModelScope, send = { value ->
                         syncMutex.withLock {
                             ensureActive()
@@ -169,7 +169,6 @@ class EpubReaderViewModel(
                     epubBook = book, currentChapterIndex = saved.first,
                     syncStatus = when {
                         remote.isFailure -> syncFailure(remote.exceptionOrNull())
-                        published.isFailure -> "Progreso solo local: no se pudieron obtener posiciones válidas de Komga para este EPUB. Vuelve a abrir el libro para reintentar."
                         remoteValue != null && EpubProgressionSync.remotePosition(paths, remoteValue, sizes, published.getOrNull()) == null -> "Posición remota no válida o capítulo desconocido; se usa la posición local."
                         else -> null
                     },
@@ -259,8 +258,17 @@ class EpubReaderViewModel(
         val modified = EpubProgressionSync.timestamp(lastModified)
         identity?.let { saveLocal(it, "${state.currentChapterIndex}:${state.proportion}:$modified") }
         val book = state.epubBook ?: return
-        if (state.currentChapterIndex !in book.chapters.indices) return
-        val locator = serverPositions?.locator(state.currentChapterIndex, state.proportion) ?: return
+        val chapter = book.chapters.getOrNull(state.currentChapterIndex) ?: return
+        val path = chapter.resourcePath ?: return
+        val type = book.publication?.mediaTypes?.get(path) ?: "application/xhtml+xml"
+        val locator = serverPositions?.locator(state.currentChapterIndex, state.proportion)
+            ?: EpubLocatorDto(
+                href = EpubProgressionSync.href(path),
+                type = type,
+                locations = EpubLocationsDto(
+                    progression = EpubProgressionSync.discreteProgression(state.proportion, chapter.resourceBytes)
+                )
+            )
         syncQueue?.offer(EpubProgressionDto(modified, EpubDeviceDto(deviceId, "Komgasun"), locator))
     }
 
@@ -273,12 +281,17 @@ class EpubReaderViewModel(
     }
 
     private fun syncFailure(error: Throwable?): String {
-        val code = error?.message?.let { Regex("HTTP (\\d{3})").find(it)?.groupValues?.get(1) }
+        val message = error?.message.orEmpty()
+        val code = Regex("HTTP (\\d{3})").find(message)?.groupValues?.get(1)
         val reason = when (code) {
             "404" -> "libro o API de localizadores no disponible"
             "401", "403" -> "acceso denegado"
             "409" -> "hay un progreso más reciente en el servidor"
-            "400" -> "localizador rechazado por el servidor"
+            "400" -> {
+                val serverMsg = Regex("\"message\"\\s*:\\s*\"([^\"]+)\"").find(message)?.groupValues?.get(1)
+                if (!serverMsg.isNullOrBlank()) "localizador rechazado: $serverMsg"
+                else "localizador rechazado por el servidor"
+            }
             else -> "no se pudo confirmar con el servidor"
         }
         return "Progreso solo local: $reason. Vuelve a abrir el libro para reintentar."

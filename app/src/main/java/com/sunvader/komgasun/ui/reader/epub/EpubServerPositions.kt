@@ -14,7 +14,8 @@ class EpubServerPositions private constructor(
     fun locator(chapter: Int, proportion: Double): EpubLocatorDto? {
         if (!proportion.isFinite() || proportion !in 0.0..1.0) return null
         val positions = chapters.getOrNull(chapter) ?: return null
-        val index = (proportion * (positions.size - 1)).roundToInt()
+        if (positions.isEmpty()) return null
+        val index = (proportion * (positions.size - 1)).roundToInt().coerceIn(0, positions.size - 1)
         val published = positions[index]
         return published.copy(locations = EpubLocationsDto(progression = published.locations!!.progression))
     }
@@ -29,29 +30,32 @@ class EpubServerPositions private constructor(
 
     companion object {
         fun create(paths: List<String>, response: EpubPositionsDto): EpubServerPositions {
-            require(paths.isNotEmpty() && paths.none { it.isBlank() } && paths.distinct().size == paths.size)
+            require(paths.isNotEmpty() && paths.none { it.isBlank() })
             require(response.total in 1..100_000 && response.total == response.positions.size)
-            val known = paths.toSet()
-            val grouped = response.positions.map { position ->
+            val knownPaths = paths.map { it.removePrefix("/") }
+            val knownSet = knownPaths.toSet()
+            val grouped = response.positions.mapNotNull { position ->
                 val value = position.locations?.progression
                 require(value != null && value.isFinite() && value in 0.0..1.0 && position.type.isNotBlank())
-                // Komga may publish raw member names, including spaces and URI delimiters.
                 val raw = position.href.removePrefix("/")
-                val resource = if (raw in known) position.href else runCatching {
+                val decoded = runCatching {
                     val uri = URI(position.href)
-                    require(!uri.isAbsolute && uri.rawAuthority == null && uri.rawQuery == null && uri.rawFragment == null)
-                    uri.path
+                    if (!uri.isAbsolute && uri.rawAuthority == null && uri.rawQuery == null && uri.rawFragment == null) {
+                        uri.path?.removePrefix("/")
+                    } else null
                 }.getOrNull()
-                val path = resource?.removePrefix("/")
-                require(path in known) { "Komga positions do not match this EPUB" }
-                path!! to position.copy(href = EpubProgressionSync.href(resource!!))
+                val candidate = raw.takeIf { it in knownSet }
+                    ?: decoded?.takeIf { it in knownSet }
+                    ?: knownPaths.firstOrNull { it.endsWith("/$raw") || raw.endsWith("/$it") || (decoded != null && (it.endsWith("/$decoded") || decoded.endsWith("/$it"))) }
+                    ?: return@mapNotNull null
+                val resource = if (position.href.startsWith("/")) "/$candidate" else candidate
+                candidate to position.copy(href = EpubProgressionSync.href(resource))
             }.groupBy({ it.first }, { it.second })
-            val chapters = paths.map { path ->
-                val positions = grouped[path]?.sortedBy { it.locations!!.progression }
-                require(!positions.isNullOrEmpty()) { "Komga has no positions for this chapter" }
-                require(positions.map { it.locations!!.progression }.distinct().size == positions.size)
-                positions
+            val chapters = paths.map { rawPath ->
+                val cleanPath = rawPath.removePrefix("/")
+                grouped[cleanPath]?.sortedBy { it.locations!!.progression }?.distinctBy { it.locations!!.progression }.orEmpty()
             }
+            require(chapters.any { it.isNotEmpty() }) { "Komga positions do not match this EPUB" }
             return EpubServerPositions(chapters)
         }
     }

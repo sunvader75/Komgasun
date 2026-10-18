@@ -33,7 +33,7 @@ object EpubHtml {
             if(refs.length<1)return;
             const ref=image.getAttribute(refs[0]);
             // Reject schemes, absolute paths, query/fragment and encoded traversal before URL normalization.
-            if(!ref || ref!==ref.trim() || /[:\\?#%]/.test(ref) || ref.startsWith('/') || ref.split('/').some(p=>p==='.'||p==='..'||!p))return;
+            if(!ref || ref!==ref.trim() || /[:\\?#%]/.test(ref) || ref.startsWith('/') || ref.split('/').some(p=>!p))return;
             let url;try{url=new URL(ref,trustedBase);}catch(e){return;}
             if(url.protocol!=='https:' || url.origin!=='https://epub.invalid' || url.search || url.hash || !allowedRasterUrls.has(url.href))return;
             const img=document.createElement('img');img.setAttribute('src',url.href);

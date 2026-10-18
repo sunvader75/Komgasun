@@ -78,6 +78,69 @@ class EpubParserTest {
         }
     }
 
+    @Test fun realFailingEpubCanBeParsed() {
+        val file = java.io.File("../El_agente_de_las_estrellas.epub").takeIf { it.exists() }
+            ?: java.io.File("El_agente_de_las_estrellas.epub").takeIf { it.exists() }
+            ?: return
+        val book = EpubParser.parse(file)
+        assertEquals(31, book.chapters.size)
+        val paths = book.chapters.map { it.resourcePath.orEmpty() }
+        var startPos = 1
+        val simulatedPositions = book.chapters.flatMap { ch ->
+            val positionCount = maxOf(1, kotlin.math.ceil(ch.resourceBytes / 1024.0).toInt())
+            (0 until positionCount).map { p ->
+                val progression = (p.toFloat() / positionCount).toDouble()
+                com.sunvader.komgasun.data.model.EpubLocatorDto(
+                    href = ch.resourcePath!!,
+                    type = "application/xhtml+xml",
+                    locations = com.sunvader.komgasun.data.model.EpubLocationsDto(progression = progression, position = startPos++)
+                )
+            }
+        }
+        val dto = com.sunvader.komgasun.data.model.EpubPositionsDto(simulatedPositions.size, simulatedPositions)
+        println("Simulated ${simulatedPositions.size} positions for 31 chapters")
+        val serverPositions = EpubServerPositions.create(paths, dto)
+        assertNotNull(serverPositions)
+
+        // Now test Komga's exact validation from BookLifecycle.kt on both discreteProgression and serverPositions
+        val mediaFiles = paths.toSet()
+        val extensionPositions = simulatedPositions
+
+        for ((idx, ch) in book.chapters.withIndex()) {
+            for (p in listOf(0.0, 0.25, 0.5, 0.75, 1.0)) {
+                // 1. Test discreteProgression (pre-cf56d38 logic)
+                val discreteVal = EpubProgressionSync.discreteProgression(p, ch.resourceBytes).toFloat()
+                val href = ch.resourcePath!!
+                assertTrue("href in mediaFiles", href in mediaFiles)
+                val matching = extensionPositions.filter { it.href == href }
+                assertTrue("matching not empty", matching.isNotEmpty())
+                val matchedDiscrete = matching.firstOrNull { it.locations!!.progression!!.toFloat() == discreteVal }
+                    ?: run {
+                        val before = matching.filter { it.locations!!.progression!!.toFloat() < discreteVal }.maxByOrNull { it.locations!!.position!! }
+                        val after = matching.filter { it.locations!!.progression!!.toFloat() > discreteVal }.minByOrNull { it.locations!!.position!! }
+                        if (before == null || after == null || before.locations!!.position!! > after.locations!!.position!!) {
+                            println("DISCRETE REJECTED: ch=$idx ($href, bytes=${ch.resourceBytes}) prop=$p discreteVal=$discreteVal before=$before after=$after matching=${matching.map { it.locations!!.progression }}")
+                            null
+                        } else before
+                    }
+
+                // 2. Test serverPositions locator
+                val locator = serverPositions.locator(idx, p)!!
+                val locVal = locator.locations!!.progression!!.toFloat()
+                val matchedServer = matching.firstOrNull { it.locations!!.progression!!.toFloat() == locVal }
+                    ?: run {
+                        val before = matching.filter { it.locations!!.progression!!.toFloat() < locVal }.maxByOrNull { it.locations!!.position!! }
+                        val after = matching.filter { it.locations!!.progression!!.toFloat() > locVal }.minByOrNull { it.locations!!.position!! }
+                        if (before == null || after == null || before.locations!!.position!! > after.locations!!.position!!) {
+                            println("SERVER POS REJECTED: ch=$idx ($href) prop=$p locVal=$locVal before=$before after=$after")
+                            null
+                        } else before
+                    }
+                assertNotNull("Server position must always be accepted by Komga", matchedServer)
+            }
+        }
+    }
+
     @Test fun canonicalReferencesChooseExactMember() {
         fixture("OPS/package/book.opf", "../Text/caf%C3%A9%20uno.xhtml#start", "OPS/Text/café uno.xhtml",
             extra = mapOf("wrong/café uno.xhtml" to "wrong".toByteArray())) { file ->

@@ -274,7 +274,12 @@ class KomgaApiClient(
         try {
             okHttpClient.newCall(request).execute().use { response ->
                 if (response.code == 204) Result.success(Unit)
-                else Result.failure(IOException("HTTP ${response.code}: ${response.message}"))
+                else {
+                    val errorBody = response.body?.string().orEmpty()
+                    val message = if (errorBody.isBlank()) "HTTP ${response.code}: ${response.message}"
+                    else "HTTP ${response.code}: ${response.message} - $errorBody"
+                    Result.failure(IOException(message))
+                }
             }
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
         catch (e: Exception) { Result.failure(e) }

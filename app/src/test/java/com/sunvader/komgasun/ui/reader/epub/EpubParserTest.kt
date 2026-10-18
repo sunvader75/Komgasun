@@ -55,6 +55,7 @@ class EpubParserTest {
                 val book = EpubParser.parse(file)
                 assertEquals("Libro á", book.title)
                 assertEquals("Capítulo á", book.chapters.single().title)
+                assertTrue(book.chapters.single().resourceBytes > 0L)
             }
             for (path in listOf("META-INF/container.xml", "book.opf")) {
                 fixture(extra = mapOf(path to "<!DOCTYPE package SYSTEM 'https://invalid.example/dtd'><package/>".toByteArray())) {

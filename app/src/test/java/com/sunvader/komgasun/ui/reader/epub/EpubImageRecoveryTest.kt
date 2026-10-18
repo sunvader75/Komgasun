@@ -12,6 +12,7 @@ class EpubImageRecoveryTest {
         assertFalse(EpubImageRecovery.validRaster("image/png", "<script/>".toByteArray()))
         assertFalse(EpubImageRecovery.validRaster("image/gif", byteArrayOf()))
         assertTrue(EpubImageRecovery.validRaster("image/jpeg", byteArrayOf(-1, -40, -1)))
+        assertTrue(EpubImageRecovery.validRaster("image/jpg", byteArrayOf(-1, -40, -1)))
         assertTrue(EpubImageRecovery.validRaster("image/gif", "GIF89a".toByteArray()))
         assertTrue(EpubImageRecovery.validRaster("image/webp", "RIFF1234WEBP".toByteArray()))
     }

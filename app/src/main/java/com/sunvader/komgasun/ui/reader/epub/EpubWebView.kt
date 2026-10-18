@@ -17,6 +17,7 @@ import kotlin.math.abs
 @SuppressLint("SetJavaScriptEnabled", "ViewConstructor")
 open class EpubWebView(context: Context) : WebView(context) {
     var onMove: (Int) -> Unit = {}
+    var onTap: () -> Unit = {}
     var onMeasured: (Long, Int, Int) -> Unit = { _, _, _ -> }
     var onImageDiagnostics: (String) -> Unit = {}
     private var recovery = EpubImageRecovery(Long.MIN_VALUE)
@@ -67,6 +68,13 @@ open class EpubWebView(context: Context) : WebView(context) {
         isVerticalScrollBarEnabled = false
         isHorizontalScrollBarEnabled = false
         overScrollMode = OVER_SCROLL_NEVER
+        WebView.setWebContentsDebuggingEnabled(true)
+        webChromeClient = object : android.webkit.WebChromeClient() {
+            override fun onConsoleMessage(message: android.webkit.ConsoleMessage?): Boolean {
+                android.util.Log.d("EpubConsole", "${message?.messageLevel()}: ${message?.message()} [${message?.sourceId()}:${message?.lineNumber()}]")
+                return true
+            }
+        }
         webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?) = true
             @Deprecated("Legacy WebView callback")
@@ -74,6 +82,7 @@ open class EpubWebView(context: Context) : WebView(context) {
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest): WebResourceResponse =
                 resource(request.url, request.method, request.isForMainFrame)
             override fun onPageFinished(view: WebView?, url: String?) {
+                android.util.Log.d("EpubDebug", "onPageFinished: url=$url (shellUrl=$shellUrl)")
                 if (disposed) return
                 if (url != shellUrl) {
                     if (url?.startsWith("chrome-error:") == true || url?.startsWith("about:") == true) documentError()
@@ -84,10 +93,12 @@ open class EpubWebView(context: Context) : WebView(context) {
                 val captured = token
                 val expected = shellUrl
                 val rasterUrls = book?.publication?.mediaTypes.orEmpty()
-                    .filterValues { it in setOf("image/png", "image/jpeg", "image/gif", "image/webp") }
+                    .filterValues { it in setOf("image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp") }
                     .keys.map { path -> EpubHtml.ORIGIN + "/" + path.split('/').joinToString("/") { Uri.encode(it) } }
+                android.util.Log.d("EpubDebug", "Installing chapter: ${chapter.resourcePath}, rasterUrls count=${rasterUrls.size}")
                 // The location/base check and install run atomically in the same JS evaluation.
                 evaluateJavascript(EpubHtml.install(JSONObject.quote(chapter.htmlContent), JSONArray(rasterUrls).toString(), JSONObject.quote(expected), JSONObject.quote(expected))) {
+                    android.util.Log.d("EpubDebug", "Install result: $it")
                     if (disposed || token != captured || !documents.isCurrent(ticket)) return@evaluateJavascript
                     if (documents.complete(ticket, it == "true")) {
                         installed = true
@@ -96,9 +107,11 @@ open class EpubWebView(context: Context) : WebView(context) {
                 }
             }
             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?) {
+                android.util.Log.e("EpubDebug", "onReceivedError: uri=${request?.url}, error=${error?.description}")
                 if (request?.isForMainFrame == true && request.url.toString() == shellUrl) documentError()
             }
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                android.util.Log.d("EpubDebug", "onPageStarted: url=$url")
                 installed = false
                 evaluation++
                 callbackPending = false
@@ -110,6 +123,7 @@ open class EpubWebView(context: Context) : WebView(context) {
     }
 
     private fun documentError() {
+        android.util.Log.e("EpubDebug", "documentError for shellUrl=$shellUrl")
         documents.begin(shellUrl)
         installed = false
         evaluation++
@@ -125,6 +139,7 @@ open class EpubWebView(context: Context) : WebView(context) {
         val captured = token
         fun record(value: String) { if (captured == token && transports.size < 256) transports[uri.toString()] = value }
         fun denied(reason: String = "POLICY") : WebResourceResponse {
+            android.util.Log.w("EpubDebug", "Resource DENIED ($reason): uri=$uri, method=$method, mainFrame=$mainFrame")
             record("HTTP403 reason=$reason mime=unknown bytes=0")
             return WebResourceResponse("text/plain", "UTF-8", 403, "Blocked", emptyMap(), ByteArrayInputStream(ByteArray(0)))
         }
@@ -143,14 +158,16 @@ open class EpubWebView(context: Context) : WebView(context) {
             val path = publication.canonicalPath(uri.toString())
             val type = publication.mediaTypes.getValue(path)
             // HTML, SVG, JavaScript and generic binary are never served as subresources.
-            if (type !in setOf("text/css", "image/png", "image/jpeg", "image/gif", "image/webp", "font/woff", "font/woff2", "font/ttf", "application/vnd.ms-opentype", "application/font-woff")) return denied("MIME")
+            if (type !in setOf("text/css", "image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "font/woff", "font/woff2", "font/ttf", "application/vnd.ms-opentype", "application/font-woff")) return denied("MIME")
             val data = publication.readCanonicalResource(uri.toString())
             record("HTTP200 reason=NONE mime=$type bytes=${data.bytes.size}")
+            android.util.Log.d("EpubDebug", "Resource SERVED: uri=$uri, mime=$type, bytes=${data.bytes.size}")
             WebResourceResponse(type, if (type == "text/css") "UTF-8" else null,
                 200, "OK", mapOf("X-Content-Type-Options" to "nosniff", "Cache-Control" to "no-store"), ByteArrayInputStream(data.bytes))
         } catch (e: EpubResourceFailure) { denied(e.category.name) }
-        catch (_: Exception) { denied("UNEXPECTED_CLASS") }
+        catch (e: Exception) { android.util.Log.e("EpubDebug", "Resource error", e); denied("UNEXPECTED_CLASS") }
     }
+
 
     fun render(state: EpubReaderUiState) {
         if (disposed) return
@@ -188,6 +205,7 @@ open class EpubWebView(context: Context) : WebView(context) {
         val capturedFont = font
         val capturedDark = dark
         evaluateJavascript("window.__epub.apply($fraction,$font,$dark)") { result ->
+            android.util.Log.d("EpubDebug", "apply($fraction,$font,$dark) result=$result (w=$width, h=$height)")
             if (disposed || token != captured || serial != evaluation) return@evaluateJavascript
             callbackPending = false
             try {
@@ -211,6 +229,10 @@ open class EpubWebView(context: Context) : WebView(context) {
         val publication = book?.publication
         val policy = recovery
         evaluateJavascript("window.__epub.images()") { raw ->
+            android.util.Log.d("EpubDebug", "images() raw: $raw")
+            evaluateJavascript("(function(){ const img=document.querySelector('img'); if(!img) return 'NO_IMG'; const r=img.getBoundingClientRect(), s=window.getComputedStyle(img); return JSON.stringify({ src:img.src, complete:img.complete, naturalW:img.naturalWidth, naturalH:img.naturalHeight, rW:r.width, rH:r.height, rT:r.top, rL:r.left, display:s.display, vis:s.visibility, opac:s.opacity, colW:document.querySelector('#pages')?.style?.columnWidth, trans:document.querySelector('#pages')?.style?.transform }); })()") { domInfo ->
+                android.util.Log.d("EpubDebug", "IMG_DOM: $domInfo")
+            }
             if (disposed || captured != token || recovery !== policy) return@evaluateJavascript
             imagePending = false
             try {
@@ -242,7 +264,8 @@ open class EpubWebView(context: Context) : WebView(context) {
                         try {
                             val path = publication.canonicalPath(source)
                             val mime = publication.mediaTypes[path]
-                            if (mime in setOf("image/png", "image/jpeg", "image/gif", "image/webp") && !Thread.currentThread().isInterrupted) {
+                            if (mime in setOf("image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp") && !Thread.currentThread().isInterrupted) {
+
                                 val bytes = publication.readCanonicalResource(source).bytes
                                 if (EpubImageRecovery.validRaster(mime!!, bytes) && policy.reserve(captured, bytes.size)) {
                                     payload = "data:$mime;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
@@ -275,7 +298,17 @@ open class EpubWebView(context: Context) : WebView(context) {
             MotionEvent.ACTION_UP -> {
                 val dx = event.x - startX
                 val dy = event.y - startY
-                if (abs(dx) > 48 * resources.displayMetrics.density && abs(dx) > abs(dy)) onMove(if (dx < 0) 1 else -1)
+                val density = resources.displayMetrics.density
+                if (abs(dx) > 40 * density && abs(dx) > abs(dy)) {
+                    onMove(if (dx < 0) 1 else -1)
+                } else if (abs(dx) < 24 * density && abs(dy) < 24 * density) {
+                    val ratio = if (width > 0) event.x / width else 0.5f
+                    when {
+                        ratio < 0.22f -> onMove(-1)
+                        ratio > 0.78f -> onMove(1)
+                        else -> onTap()
+                    }
+                }
                 performClick()
             }
         }
@@ -290,6 +323,7 @@ open class EpubWebView(context: Context) : WebView(context) {
         ++evaluation
         removeCallbacks(poll)
         onMove = {}
+        onTap = {}
         onMeasured = { _, _, _ -> }
         stopLoading()
         webViewClient = WebViewClient()

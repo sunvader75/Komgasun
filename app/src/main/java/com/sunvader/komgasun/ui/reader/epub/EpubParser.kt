@@ -15,7 +15,8 @@ data class EpubChapter(
     val title: String,
     val href: String,
     val htmlContent: String,
-    val resourcePath: String? = null
+    val resourcePath: String? = null,
+    val resourceBytes: Long = 0L
 )
 
 data class EpubBook(
@@ -60,9 +61,10 @@ object EpubParser {
             val id = item.getAttribute("idref")
             val (path, mediaType) = manifest[id] ?: throw EpubException("Spine EPUB referencia un identificador ausente: $id")
             if (mediaType != "application/xhtml+xml" && mediaType != "text/html") throw EpubException("Tipo de capítulo EPUB no compatible: $mediaType ($path)")
-            val html = decodeXml(read(path))
+            val raw = read(path)
+            val html = decodeXml(raw)
             val title = extractChapterTitle(html) ?: "Capítulo ${index + 1}"
-            EpubChapter(id, title, hrefs.getValue(id), html, path)
+            EpubChapter(id, title, hrefs.getValue(id), html, path, raw.size.toLong())
         }
         EpubBook(
             opf.elements(DC, "title").firstOrNull()?.textContent?.trim().orEmpty().ifBlank { epubFile.nameWithoutExtension },

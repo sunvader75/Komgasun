@@ -105,4 +105,38 @@ class EpubProgressionSyncTest {
         assertNull(EpubProgressionSync.epoch("not a timestamp"))
         assertNull(EpubProgressionSync.epoch("2026-02-30T00:00:00Z"))
     }
+    @Test fun discreteProgressionMatchesKomgaPositionAlgorithm() {
+        // Single position (< 1024 bytes): always 0.0, never 1.0 (avoids Komga's after == null error)
+        assertEquals(0.0, EpubProgressionSync.discreteProgression(0.0, 500), 0.0001)
+        assertEquals(0.0, EpubProgressionSync.discreteProgression(0.5, 500), 0.0001)
+        assertEquals(0.0, EpubProgressionSync.discreteProgression(1.0, 500), 0.0001)
+
+        // 5 positions (5000 bytes -> ceil(5000/1024) = 5): discrete positions are 0.0, 0.2, 0.4, 0.6, 0.8
+        assertEquals(0.0, EpubProgressionSync.discreteProgression(0.0, 5000), 0.0001)
+        assertEquals(0.2, EpubProgressionSync.discreteProgression(0.25, 5000), 0.0001)
+        assertEquals(0.4, EpubProgressionSync.discreteProgression(0.5, 5000), 0.0001)
+        assertEquals(0.6, EpubProgressionSync.discreteProgression(0.75, 5000), 0.0001)
+        assertEquals(0.8, EpubProgressionSync.discreteProgression(1.0, 5000), 0.0001)
+
+        // Out of bound / NaN inputs clamp safely
+        assertEquals(0.0, EpubProgressionSync.discreteProgression(Double.NaN, 5000), 0.0001)
+        assertEquals(0.0, EpubProgressionSync.discreteProgression(-0.5, 5000), 0.0001)
+        assertEquals(0.8, EpubProgressionSync.discreteProgression(1.5, 5000), 0.0001)
+    }
+    @Test fun continuousProportionRestoresReadingProportionFromDiscrete() {
+        assertEquals(0.0, EpubProgressionSync.continuousProportion(0.0, 500), 0.0001)
+        assertEquals(0.0, EpubProgressionSync.continuousProportion(0.0, 5000), 0.0001)
+        assertEquals(0.5, EpubProgressionSync.continuousProportion(0.4, 5000), 0.0001)
+        assertEquals(1.0, EpubProgressionSync.continuousProportion(0.8, 5000), 0.0001)
+    }
+    @Test fun remotePositionToleratesLeadingSlashesAndExpandsDiscreteProgression() {
+        val sizes = listOf(5000L, 1000L)
+        // With size, 0.8 on chapter 0 (5000 bytes) maps back to 1.0 proportion
+        assertEquals(0 to 1.0, EpubProgressionSync.remotePosition(paths, remote("OEBPS/a%20b.xhtml", 0.8), sizes))
+        // Leading slash on locator href is tolerated
+        assertEquals(0 to 1.0, EpubProgressionSync.remotePosition(paths, remote("/OEBPS/a%20b.xhtml", 0.8), sizes))
+        // Leading slash on paths list is tolerated
+        val slashPaths = listOf("/OEBPS/a b.xhtml", "/OEBPS/two.xhtml")
+        assertEquals(0 to 1.0, EpubProgressionSync.remotePosition(slashPaths, remote("OEBPS/a%20b.xhtml", 0.8), sizes))
+    }
 }

@@ -34,6 +34,7 @@ data class EpubReaderUiState(
     val chapterGeneration: Long = 0,
     val fontSizeSp: Int = 18,
     val isDarkTheme: Boolean = true,
+    val showControls: Boolean = false,
     val syncStatus: String? = null,
     val errorMessage: String? = null
 )
@@ -114,7 +115,7 @@ class EpubReaderViewModel(
                 ensureActive()
                 if (sessionToken != session) return@launch
                 val local = preferences.getString(key, null)
-                val saved = EpubProgressionSync.resume(book.chapters.map { it.resourcePath.orEmpty() }, local, remote.getOrNull())
+                val saved = EpubProgressionSync.resume(book.chapters.map { it.resourcePath.orEmpty() }, local, remote.getOrNull(), book.chapters.map { it.resourceBytes })
                 check(repository.getActiveConfig() == config) { "La sesión ha cambiado; vuelve a abrir el libro" }
                 identity = key
                 sessionConfig = config
@@ -123,7 +124,7 @@ class EpubReaderViewModel(
                 // Cache the selected remote locator with its original time, never 'now'.
                 val remoteValue = remote.getOrNull()
                 if (remoteValue != null && (EpubProgressionSync.epoch(local?.split(':', limit = 3)?.getOrNull(2)) ?: 0L) <= (EpubProgressionSync.epoch(remoteValue.modified) ?: 0L)
-                    && saved == EpubProgressionSync.remotePosition(book.chapters.map { it.resourcePath.orEmpty() }, remoteValue)) {
+                    && saved == EpubProgressionSync.remotePosition(book.chapters.map { it.resourcePath.orEmpty() }, remoteValue, book.chapters.map { it.resourceBytes })) {
                     saveLocal(key, "${saved.first}:${saved.second}:${remoteValue.modified}")
                 }
                 lastModified = maxOf(EpubProgressionSync.epoch(remote.getOrNull()?.modified) ?: 0L,
@@ -151,7 +152,7 @@ class EpubReaderViewModel(
                     epubBook = book, currentChapterIndex = saved.first,
                     syncStatus = when {
                         remote.isFailure -> syncFailure(remote.exceptionOrNull())
-                        remoteValue != null && EpubProgressionSync.remotePosition(book.chapters.map { it.resourcePath.orEmpty() }, remoteValue) == null -> "Posición remota no válida o capítulo desconocido; se usa la posición local."
+                        remoteValue != null && EpubProgressionSync.remotePosition(book.chapters.map { it.resourcePath.orEmpty() }, remoteValue, book.chapters.map { it.resourceBytes }) == null -> "Posición remota no válida o capítulo desconocido; se usa la posición local."
                         else -> null
                     },
                     page = 0, pageCount = 0, proportion = saved.second, chapterGeneration = token) }
@@ -215,10 +216,12 @@ class EpubReaderViewModel(
         val modified = EpubProgressionSync.timestamp(lastModified)
         identity?.let { saveLocal(it, "${state.currentChapterIndex}:${state.proportion}:$modified") }
         val book = state.epubBook ?: return
-        val path = book.chapters.getOrNull(state.currentChapterIndex)?.resourcePath ?: return
+        val chapter = book.chapters.getOrNull(state.currentChapterIndex) ?: return
+        val path = chapter.resourcePath ?: return
         val type = book.publication?.mediaTypes?.get(path) ?: return
+        val progression = EpubProgressionSync.discreteProgression(state.proportion, chapter.resourceBytes)
         syncQueue?.offer(EpubProgressionDto(modified, EpubDeviceDto(deviceId, "Komgasun"),
-            EpubLocatorDto(EpubProgressionSync.href(path), type, EpubLocationsDto(state.proportion))))
+            EpubLocatorDto(EpubProgressionSync.href(path), type, EpubLocationsDto(progression))))
     }
 
     private fun saveLocal(key: String, locator: String) {
@@ -254,6 +257,32 @@ class EpubReaderViewModel(
     }
     fun nextChapter() = movePage(1)
     fun previousChapter() = movePage(-1)
+    fun nextPage() = movePage(1)
+    fun previousPage() = movePage(-1)
+    fun toggleControls() { _uiState.update { it.copy(showControls = !it.showControls) } }
+    fun setControlsVisible(visible: Boolean) { _uiState.update { it.copy(showControls = visible) } }
+    fun seekPage(targetPage: Int) {
+        val state = _uiState.value
+        if (!state.isReady || state.pageCount <= 0) return
+        val clamped = targetPage.coerceIn(0, state.pageCount - 1)
+        if (clamped != state.page) {
+            positionChangedByReader = true
+            _uiState.update { it.copy(page = clamped, proportion = EpubPagination.proportion(clamped, it.pageCount)) }
+        }
+    }
+    fun nextChapterDirect() {
+        val state = _uiState.value
+        val totalChapters = state.epubBook?.chapters?.size ?: 0
+        if (state.currentChapterIndex < totalChapters - 1) {
+            selectChapter(state.currentChapterIndex + 1)
+        }
+    }
+    fun previousChapterDirect() {
+        val state = _uiState.value
+        if (state.currentChapterIndex > 0) {
+            selectChapter(state.currentChapterIndex - 1)
+        }
+    }
     fun increaseFontSize() { _uiState.update { it.copy(fontSizeSp = (it.fontSizeSp + 2).coerceAtMost(32), pageCount = 0) } }
     fun decreaseFontSize() { _uiState.update { it.copy(fontSizeSp = (it.fontSizeSp - 2).coerceAtLeast(12), pageCount = 0) } }
     fun toggleTheme() { _uiState.update { it.copy(isDarkTheme = !it.isDarkTheme) } }

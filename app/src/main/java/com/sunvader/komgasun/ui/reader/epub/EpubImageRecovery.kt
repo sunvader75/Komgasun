@@ -19,7 +19,8 @@ class EpubImageRecovery(private val generation: Long) {
             fun text(offset: Int, value: String) = data.size >= offset + value.length && value.indices.all { data[offset + it].toInt() == value[it].code }
             return when (mime) {
                 "image/png" -> prefix(137, 80, 78, 71, 13, 10, 26, 10)
-                "image/jpeg" -> prefix(255, 216, 255)
+                "image/jpeg", "image/jpg" -> prefix(255, 216, 255)
+
                 "image/gif" -> text(0, "GIF87a") || text(0, "GIF89a")
                 "image/webp" -> text(0, "RIFF") && text(8, "WEBP")
                 else -> false

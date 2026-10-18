@@ -10,6 +10,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import kotlin.math.roundToInt
 
 /** Pure resume policy: server page numbers are never EPUB chapter indices. */
 object EpubProgressionSync {
@@ -27,9 +28,31 @@ object EpubProgressionSync {
 
     fun href(path: String): String = URI(null, null, "/$path", null).toASCIIString().removePrefix("/").replace(":", "%3A")
 
-    fun resume(paths: List<String>, local: String?, remote: EpubProgressionDto?): Pair<Int, Double> {
+    /**
+     * Maps continuous reading proportion [0.0..1.0] to a discrete Readium progression
+     * matching Komga's position set (1 position per 1024 bytes).
+     */
+    fun discreteProgression(proportion: Double, resourceBytes: Long): Double {
+        if (!proportion.isFinite()) return 0.0
+        val count = kotlin.math.ceil(resourceBytes.coerceAtLeast(0) / 1024.0).toInt().coerceAtLeast(1)
+        if (count <= 1) return 0.0
+        val index = (proportion.coerceIn(0.0, 1.0) * (count - 1)).roundToInt().coerceIn(0, count - 1)
+        return index.toDouble() / count
+    }
+
+    /**
+     * Restores continuous reading proportion [0.0..1.0] from a discrete Readium progression.
+     */
+    fun continuousProportion(progression: Double, resourceBytes: Long): Double {
+        if (!progression.isFinite()) return 0.0
+        val count = kotlin.math.ceil(resourceBytes.coerceAtLeast(0) / 1024.0).toInt().coerceAtLeast(1)
+        if (count <= 1) return 0.0
+        return (progression.coerceIn(0.0, 1.0) * count / (count - 1)).coerceIn(0.0, 1.0)
+    }
+
+    fun resume(paths: List<String>, local: String?, remote: EpubProgressionDto?, sizes: List<Long> = emptyList()): Pair<Int, Double> {
         val saved = EpubReaderStorage.decodeLocator(local, paths.size)
-        val position = remotePosition(paths, remote)
+        val position = remotePosition(paths, remote, sizes)
         val remoteTime = epoch(remote?.modified)
         val localTime = epoch(local?.split(':', limit = 3)?.getOrNull(2))
         if (position != null && remoteTime != null) {
@@ -39,14 +62,19 @@ object EpubProgressionSync {
         return saved ?: (0 to 0.0)
     }
 
-    fun remotePosition(paths: List<String>, remote: EpubProgressionDto?): Pair<Int, Double>? {
+    fun remotePosition(paths: List<String>, remote: EpubProgressionDto?, sizes: List<Long> = emptyList()): Pair<Int, Double>? {
         val fraction = remote?.locator?.locations?.progression
         val path = try {
             val uri = URI(remote?.locator?.href ?: "")
-            if (uri.isAbsolute || uri.rawAuthority != null || uri.rawQuery != null) null else uri.path
+            if (uri.isAbsolute || uri.rawAuthority != null || uri.rawQuery != null) null else uri.path?.removePrefix("/")
         } catch (_: Exception) { null }
-        val index = paths.indexOf(path)
-        return if (index >= 0 && fraction != null && fraction.isFinite() && fraction in 0.0..1.0 && epoch(remote?.modified) != null) index to fraction else null
+        val index = paths.map { it.removePrefix("/") }.indexOf(path)
+        if (index < 0 || fraction == null || !fraction.isFinite() || fraction !in 0.0..1.0 || epoch(remote.modified) == null) {
+            return null
+        }
+        val size = sizes.getOrNull(index) ?: 0L
+        val proportion = if (size > 1024L) continuousProportion(fraction, size) else fraction
+        return index to proportion
     }
 }
 

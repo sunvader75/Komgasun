@@ -28,4 +28,10 @@ class EpubHtmlTest {
         assertTrue(bootstrap.contains("'script,base,meta,iframe"))
         assertTrue(bootstrap.contains("startsWith('on')"))
     }
+    @Test fun svgCoverConversionAllowsVersionAttribute() {
+        val bootstrap = EpubHtml.install("\"<svg></svg>\"")
+        assertTrue(bootstrap.contains("'version'"))
+        assertTrue(bootstrap.contains("refs.length<1"))
+    }
 }
+

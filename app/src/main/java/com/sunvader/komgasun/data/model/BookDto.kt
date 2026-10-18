@@ -13,7 +13,8 @@ data class BookDto(
     val metadata: BookMetadataDto = BookMetadataDto(),
     val readProgress: ReadProgressDto? = null,
     val deleted: Boolean = false,
-    val sizeBytes: Long = 0
+    val sizeBytes: Long = 0,
+    @kotlinx.serialization.Transient val epubProgress: EpubCoverProgress? = null
 )
 
 @Serializable

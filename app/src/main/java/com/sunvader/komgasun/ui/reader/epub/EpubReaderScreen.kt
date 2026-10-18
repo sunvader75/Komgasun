@@ -215,6 +215,7 @@ fun EpubReaderScreen(
                             update = { paginator ->
                                 paginator.onPageMap = { pages, failed ->
                                     bookPageMap = pages
+                                    viewModel.onBookPageMap(pages)
                                     paginationFailed = failed
                                 }
                                 paginator.onProgress = { done, _ -> measuredChapters = done }

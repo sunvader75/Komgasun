@@ -1,6 +1,16 @@
 package com.sunvader.komgasun.data.repository
 
 import com.sunvader.komgasun.data.local.PreferencesManager
+import com.sunvader.komgasun.data.model.BookType
+import com.sunvader.komgasun.data.model.EpubCoverProgress
+import com.sunvader.komgasun.data.model.detectBookType
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import com.sunvader.komgasun.data.model.BookDto
 import com.sunvader.komgasun.data.model.BookPageDto
 import com.sunvader.komgasun.data.model.LibraryDto
@@ -76,18 +86,17 @@ class KomgaRepository(
         val result = apiClient.getBooks(config, seriesId)
         return result.map { list ->
             val overrides = _recentProgress.value
-            if (overrides.isEmpty()) list else {
-                list.map { book ->
-                    val override = overrides[book.id]
-                    if (override != null) book.copy(readProgress = override) else book
-                }
+            val books = list.map { book ->
+                val override = overrides[book.id]
+                if (override != null) book.copy(readProgress = override) else book
             }
+            enrichEpubCovers(config, books)
         }
     }
 
     suspend fun getInProgressBooks(): Result<List<BookDto>> {
         val config = getActiveConfig() ?: return Result.failure(IOException("Sesión no iniciada"))
-        return apiClient.getInProgressBooks(config)
+        return apiClient.getInProgressBooks(config).map { enrichEpubCovers(config, it) }
     }
 
     suspend fun getBook(bookId: String): Result<BookDto> {
@@ -95,8 +104,21 @@ class KomgaRepository(
         val result = apiClient.getBook(config, bookId)
         return result.map { book ->
             val override = _recentProgress.value[bookId]
-            if (override != null) book.copy(readProgress = override) else book
+            val updated = if (override != null) book.copy(readProgress = override) else book
+            enrichEpubCovers(config, listOf(updated)).single()
         }
+    }
+
+    private suspend fun enrichEpubCovers(config: ServerConfig, books: List<BookDto>): List<BookDto> = coroutineScope {
+        val requests = Semaphore(4)
+        books.map { book -> async {
+            if (book.detectBookType() != BookType.EPUB) book else requests.withPermit {
+                val local = withContext(IO) { preferencesManager.epubCoverProgress.read(config, book.id) }
+                val remote = if (local == null && book.readProgress?.completed == false && book.readProgress.page > 0)
+                    EpubCoverProgress.fromRemote(apiClient.getEpubProgression(config, book.id).getOrNull()) else null
+                book.copy(epubProgress = local ?: remote)
+            }
+        } }.awaitAll()
     }
 
     // Explicit captured configuration prevents queued EPUB writes from switching account/server.
@@ -128,6 +150,9 @@ class KomgaRepository(
         val config = getActiveConfig() ?: return Result.failure(IOException("Sesión no iniciada"))
         val result = apiClient.setBookReadStatus(config, book.id, completed)
         if (result.isSuccess) {
+            if (!completed && book.detectBookType() == BookType.EPUB) {
+                withContext(IO) { preferencesManager.epubCoverProgress.clear(config, book.id) }
+            }
             val progress = ReadProgressDto(
                 page = if (completed) book.media.pagesCount else 0,
                 completed = completed

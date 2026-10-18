@@ -44,7 +44,7 @@ class BooksViewModel(
                         current.copy(
                             books = current.books.map { book ->
                                 val override = overrides[book.id]
-                                if (override != null) book.copy(readProgress = override) else book
+                                if (override != null) book.withReadingProgress(override) else book
                             }
                         )
                     }
@@ -112,7 +112,7 @@ class BooksViewModel(
                     )
                     _uiState.update { state ->
                         state.copy(books = state.books.map {
-                            if (it.id == book.id) it.copy(readProgress = progress) else it
+                            if (it.id == book.id) it.withReadingProgress(progress) else it
                         })
                     }
                 }

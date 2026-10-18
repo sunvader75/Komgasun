@@ -59,6 +59,7 @@ class EpubReaderViewModel(
     private var session = 0L
     private var sessionConfig: ServerConfig? = null
     private var syncQueue: EpubProgressionQueue? = null
+    private var bookPages: EpubBookPageMap? = null
     private val syncMutex = Mutex()
     private val devicePreferences = application.getSharedPreferences("epub_sync_device", 0)
     private val deviceId: String = devicePreferences.getString("id", null) ?: UUID.randomUUID().toString().also {
@@ -73,6 +74,7 @@ class EpubReaderViewModel(
         syncQueue?.close()
         syncQueue = null
         sessionConfig = null
+        bookPages = null
         identity = null
         _uiState.update { it.copy(isLoading = true, isReady = false, pageCount = 0, errorMessage = null, syncStatus = null) }
         loadJob = viewModelScope.launch {
@@ -206,6 +208,30 @@ class EpubReaderViewModel(
         if (!state.isReady || token != state.chapterGeneration || count !in 1..100000 || page !in 0 until count) return
         _uiState.update { it.copy(page = page, pageCount = count, proportion = EpubPagination.proportion(page, count)) }
         flushProgress()
+        saveCoverSummary()
+    }
+
+    internal fun onBookPageMap(pages: EpubBookPageMap?) {
+        val state = _uiState.value
+        if (!state.isReady) return
+        if (pages != null && pages.counts.size != state.epubBook?.chapters?.size) return
+        bookPages = pages
+        saveCoverSummary()
+    }
+
+    private fun saveCoverSummary() {
+        val state = _uiState.value
+        val config = sessionConfig ?: return
+        val chapters = state.epubBook?.chapters?.size ?: return
+        if (!state.isReady || chapters < 1 || state.currentChapterIndex !in 0 until chapters) return
+        val pages = bookPages
+        val fraction = if (pages != null) {
+            val chapterCount = pages.counts[state.currentChapterIndex]
+            val page = if (state.pageCount == chapterCount) state.page else EpubPagination.page(state.proportion, chapterCount)
+            val absolutePage = pages.absolutePage(state.currentChapterIndex, page)
+            if (pages.total <= 1) 0.0 else (absolutePage - 1).toDouble() / (pages.total - 1)
+        } else EpubBookProgress.fraction(state.currentChapterIndex, state.proportion, chapters)
+        repository.preferencesManager.epubCoverProgress.save(config, bookId, EpubCoverProgress(fraction, pages?.total))
     }
 
     fun flushProgress() {
@@ -249,6 +275,7 @@ class EpubReaderViewModel(
 
     fun onReaderClosed() {
         flushProgress()
+        saveCoverSummary()
         ++generation
         ++session
         syncQueue?.close()

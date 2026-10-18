@@ -360,6 +360,7 @@ fun BookGridItem(
     } else ""
 
     val readingStatus = book.readingStatus()
+    val coverPages = book.coverPageCount()
     val badgeText = book.formatBadge()
     val badgeColor = when (book.detectBookType()) {
         BookType.PDF -> MaterialTheme.colorScheme.error
@@ -412,7 +413,7 @@ fun BookGridItem(
                 }
 
                 // Bottom page count
-                if (book.media.pagesCount > 0) {
+                if (coverPages != null) {
                     Surface(
                         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
                         shape = RoundedCornerShape(topStart = 8.dp),
@@ -420,7 +421,7 @@ fun BookGridItem(
                             .padding(bottom = if (readingStatus.fraction != null) 6.dp else 0.dp)
                     ) {
                         Text(
-                            text = "${book.media.pagesCount} p.",
+                            text = "$coverPages p.",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface,

@@ -20,6 +20,7 @@ import java.io.IOException
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "komgasun_prefs")
 
 class PreferencesManager(private val context: Context) {
+    val epubCoverProgress = EpubCoverProgressStore(context.getSharedPreferences("epub_cover_progress", Context.MODE_PRIVATE))
 
     companion object {
         val KEY_SERVER_URL = stringPreferencesKey("server_url")

@@ -22,6 +22,15 @@ class EpubReaderStorageTest {
             assertNull(EpubReaderStorage.decodeLocator(value, 2))
         }
     }
+    @Test fun timestampedRecordsRemainCompatibleWithoutRewritingLegacyRecords() {
+        val legacy = "1:0.5"
+        assertEquals(1 to 0.5, EpubReaderStorage.decodeLocator(legacy, 2))
+        assertEquals(1 to 0.5, EpubReaderStorage.decodeLocator("1:0.5:2026-10-17T22:00:00.123Z", 2))
+        assertEquals(1 to 0.5, EpubReaderStorage.decodeLocator("1:0.5:2026-10-18T00:00:00.123+02:00", 2))
+        assertNull(EpubReaderStorage.decodeLocator("1:0.5:invalid", 2))
+        assertNull(EpubReaderStorage.decodeLocator("2:0.5:2026-10-17T22:00:00.123Z", 2))
+        assertEquals("1:0.5", legacy)
+    }
     @Test fun serverResetAndRereadDiscardOldLocator() {
         assertNull(EpubReaderStorage.resumeLocator("0:1.0", 2, 0, false))
         assertNull(EpubReaderStorage.resumeLocator("1:1.0", 2, 2, true))

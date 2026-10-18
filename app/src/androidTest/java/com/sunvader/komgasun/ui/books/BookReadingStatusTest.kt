@@ -45,9 +45,9 @@ class BookReadingStatusTest {
         compose.onNodeWithText("No disponible").assertIsDisplayed()
         progressCount(0)
     }
-    @Test fun epubHasChapterButNoPercentageBar() {
+    @Test fun epubHasGenericReadingStatusWithoutInventedChapter() {
         show(book(page = 35, name = "book.epub"))
-        compose.onNodeWithText("En lectura · Capítulo 35").assertIsDisplayed()
+        compose.onNodeWithText("En lectura").assertIsDisplayed()
         progressCount(0)
     }
     @Test fun unknownTotalHasPositionWithoutPercentageBar() {

@@ -99,6 +99,13 @@ class KomgaRepository(
         }
     }
 
+    // Explicit captured configuration prevents queued EPUB writes from switching account/server.
+    suspend fun getEpubProgression(config: ServerConfig, bookId: String) =
+        apiClient.getEpubProgression(config, bookId)
+
+    suspend fun putEpubProgression(config: ServerConfig, bookId: String, progression: com.sunvader.komgasun.data.model.EpubProgressionDto) =
+        apiClient.putEpubProgression(config, bookId, progression)
+
     fun syncReadProgressAsync(bookId: String, page: Int, completed: Boolean) {
         val updated = ReadProgressDto(page = page, completed = completed)
         _recentProgress.update { it + (bookId to updated) }

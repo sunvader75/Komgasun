@@ -26,8 +26,9 @@ object EpubReaderStorage {
     }
 
     fun decodeLocator(value: String?, chapters: Int): Pair<Int, Double>? {
-        val parts = value?.split(':') ?: return null
-        if (parts.size != 2) return null
+        val parts = value?.split(':', limit = 3) ?: return null
+        if (parts.size !in 2..3) return null
+        if (parts.size == 3 && EpubProgressionSync.epoch(parts[2]) == null) return null
         val chapter = parts[0].toIntOrNull() ?: return null
         val fraction = parts[1].toDoubleOrNull() ?: return null
         if (chapter !in 0 until chapters || !fraction.isFinite() || fraction !in 0.0..1.0) return null

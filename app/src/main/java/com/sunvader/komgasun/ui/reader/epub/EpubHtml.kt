@@ -3,18 +3,24 @@ package com.sunvader.komgasun.ui.reader.epub
 /** Publication markup is never interpolated into this trusted bootstrap document. */
 object EpubHtml {
     const val ORIGIN = "https://epub.invalid"
-    val shell = """<!doctype html><html><head><meta charset="utf-8">
-        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline' https://epub.invalid; img-src https://epub.invalid; font-src https://epub.invalid; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+    val shell = """<!doctype html><html data-epub-shell="app"><head><meta charset="utf-8">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline' https://epub.invalid; img-src https://epub.invalid blob:; font-src https://epub.invalid; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
         <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
         </head><body></body></html>""".trimIndent()
 
     // DOMParser produces an inert tree. Active elements and attributes are removed before adoption.
     // CSP is a second boundary, including for publication CSS URLs; no inline script is trusted.
-    fun install(quotedHtml: String, quotedRasterUrls: String = "[]"): String = """
+    fun install(quotedHtml: String, quotedRasterUrls: String = "[]", quotedChapterBase: String = "null", quotedDocumentUrl: String = "null"): String = """
         (function(){
+          const expectedDocument=$quotedDocumentUrl;
+          if(expectedDocument && (location.href!==expectedDocument || location.origin!=='https://epub.invalid' || document.baseURI!==expectedDocument || document.documentElement.getAttribute('data-epub-shell')!=='app'))return false;
+          // Only this app creates the immutable API. Same-document completion is a no-op;
+          // chapter changes always navigate to a new shell, never delete/replace this property.
+          if(Object.prototype.hasOwnProperty.call(window,'__epub'))return !!expectedDocument;
           const parsed=new DOMParser().parseFromString($quotedHtml,'text/html');
           // Only a passive SVG containing one raster image is translated; never adopt SVG nodes.
           const allowedRasterUrls=new Set($quotedRasterUrls);
+          const trustedBase=$quotedChapterBase || document.baseURI;
           parsed.querySelectorAll('svg').forEach(svg=>{
             const passive=(node,allowed)=>Array.from(node.attributes).every(a=>allowed.includes(a.name));
             if(svg.namespaceURI!=='http://www.w3.org/2000/svg' ||
@@ -28,7 +34,7 @@ object EpubHtml {
             const ref=image.getAttribute(refs[0]);
             // Reject schemes, absolute paths, query/fragment and encoded traversal before URL normalization.
             if(!ref || ref!==ref.trim() || /[:\\?#%]/.test(ref) || ref.startsWith('/') || ref.split('/').some(p=>p==='.'||p==='..'||!p))return;
-            let url;try{url=new URL(ref,document.baseURI);}catch(e){return;}
+            let url;try{url=new URL(ref,trustedBase);}catch(e){return;}
             if(url.protocol!=='https:' || url.origin!=='https://epub.invalid' || url.search || url.hash || !allowedRasterUrls.has(url.href))return;
             const img=document.createElement('img');img.setAttribute('src',url.href);
             svg.replaceWith(img);
@@ -38,6 +44,17 @@ object EpubHtml {
             if(a.name.toLowerCase().startsWith('on') || ['srcdoc','action','formaction','target','download','autofocus','loading','id','name'].includes(a.name.toLowerCase())) e.removeAttribute(a.name);
           }));
           parsed.querySelectorAll('link').forEach(e=>{if(e.rel!=='stylesheet' || !e.getAttribute('href')?.trim())e.remove();else e.removeAttribute('disabled');});
+          // Publication data/external image attributes never reach the live document.
+          const sourceKinds=new WeakMap();
+          parsed.querySelectorAll('img').forEach(e=>sourceKinds.set(e,!e.hasAttribute('src')?'MISSING_ATTR':!e.getAttribute('src')?'EMPTY_ATTR':'ATTR'));
+          parsed.querySelectorAll('*').forEach(e=>{
+            e.removeAttribute('srcset');e.removeAttribute('background');e.removeAttribute('poster');
+            if(e.hasAttribute('src')) {
+              let url;try{if(e.getAttribute('src'))url=new URL(e.getAttribute('src'),trustedBase);}catch(_){}
+              if(e.tagName!=='IMG' || !url || !allowedRasterUrls.has(url.href))e.removeAttribute('src');
+              else e.setAttribute('src',url.href);
+            }
+          });
           let pendingStyles=0;
           parsed.querySelectorAll('link').forEach(e=>{
             pendingStyles++;
@@ -56,7 +73,21 @@ object EpubHtml {
             table {table-layout:fixed;width:100%;} pre {white-space:pre-wrap!important;break-inside:auto!important;}
           `; document.head.append(css);
           let fraction=0, font=18, dark=true;
-          const api={apply:function(f,size,theme){
+          const images=Array.from(pages.querySelectorAll('img'));
+          const validatedSources=images.map(e=>e.getAttribute('src') || '');
+          const started=performance.now(), retried=new Set();
+          const api={images:function(){return images.slice(0,256).map((e,i)=>{
+            const r=e.getBoundingClientRect();return [i,validatedSources[i],e.complete,e.naturalWidth,e.naturalHeight,Math.round(r.width),Math.round(r.height),performance.now()-started,sourceKinds.get(e)||'MISSING_ATTR',e.currentSrc?'CURRENT_SRC':'ATTR',allowedRasterUrls.size,$quotedChapterBase?'APP_CHAPTER':'DOCUMENT_FALLBACK'];
+          });},recover:function(i,source){
+            if(!Number.isInteger(i)||i<0||i>=images.length||retried.has(i)||!/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(source))return false;
+            retried.add(i);
+            const parts=source.split(','),raw=atob(parts[1]),bytes=new Uint8Array(raw.length);
+            for(let n=0;n<raw.length;n++)bytes[n]=raw.charCodeAt(n);
+            const url=URL.createObjectURL(new Blob([bytes],{type:parts[0].slice(5,-7)}));
+            const release=()=>{URL.revokeObjectURL(url);images[i].removeEventListener('load',release);images[i].removeEventListener('error',release);};
+            images[i].addEventListener('load',release);images[i].addEventListener('error',release);
+            images[i].src=url;return true;
+          },apply:function(f,size,theme){
             fraction=Math.max(0,Math.min(1,f));font=size;dark=theme;
             const w=window.innerWidth,h=window.innerHeight;
             if(w<1||h<1)return [0,0];
@@ -65,7 +96,7 @@ object EpubHtml {
             document.body.style.background=dark?'#121212':'white';
             const n=Math.max(1,Math.ceil(pages.scrollWidth/w));
             // Do not commit an initial/end locator against an image/font/CSS placeholder layout.
-            if(pendingStyles>0 || Array.from(pages.querySelectorAll('img')).some(e=>!e.complete) || (document.fonts && document.fonts.status==='loading'))return [0,0];
+            if(pendingStyles>0 || (performance.now()-started<1500 && images.some(e=>!e.complete || e.naturalWidth===0)) || (document.fonts && document.fonts.status==='loading'))return [0,0];
             const p=Math.round(fraction*(n-1));
             pages.style.setProperty('transform','translateX('+(-p*w)+'px)','important');
             return [p,n];

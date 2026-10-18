@@ -224,6 +224,35 @@ class KomgaApiClient(
         }
     }
 
+    /** 204 means no saved locator; 404 is deliberately not treated as an empty position. */
+    suspend fun getEpubProgression(config: ServerConfig, bookId: String): Result<com.sunvader.komgasun.data.model.EpubProgressionDto?> = withContext(Dispatchers.IO) {
+        val url = "${config.serverUrl.trim().removeSuffix("/")}/api/v1/books/$bookId/progression"
+        try {
+            okHttpClient.newCall(buildRequest(url, config)).execute().use { response ->
+                when (response.code) {
+                    204 -> Result.success(null)
+                    200 -> Result.success(json.decodeFromString<com.sunvader.komgasun.data.model.EpubProgressionDto>(response.body?.string().orEmpty()))
+                    else -> Result.failure(IOException("HTTP ${response.code}: ${response.message}"))
+                }
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (e: Exception) { Result.failure(e) }
+    }
+
+    suspend fun putEpubProgression(config: ServerConfig, bookId: String, progression: com.sunvader.komgasun.data.model.EpubProgressionDto): Result<Unit> = withContext(Dispatchers.IO) {
+        val url = "${config.serverUrl.trim().removeSuffix("/")}/api/v1/books/$bookId/progression"
+        val request = buildRequest(url, config).newBuilder()
+            .put(json.encodeToString(progression).toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+        try {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (response.code == 204) Result.success(Unit)
+                else Result.failure(IOException("HTTP ${response.code}: ${response.message}"))
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (e: Exception) { Result.failure(e) }
+    }
+
     @Serializable
     private data class ReadProgressUpdatePayload(
         val page: Int? = null,

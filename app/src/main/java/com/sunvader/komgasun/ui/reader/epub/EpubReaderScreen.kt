@@ -76,6 +76,7 @@ fun EpubReaderScreen(
     }
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var imageDiagnostics by remember(bookId) { mutableStateOf("") }
     var showChapterDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
@@ -282,6 +283,7 @@ fun EpubReaderScreen(
                 state.epubBook != null -> {
                     AndroidView(
                         factory = { ctx -> EpubWebView(ctx).apply {
+                            onImageDiagnostics = { imageDiagnostics = it }
                             onMove = viewModel::movePage
                             onMeasured = viewModel::onPageMeasured
                         } },
@@ -289,6 +291,14 @@ fun EpubReaderScreen(
                         onRelease = { it.dispose() },
                         modifier = Modifier.fillMaxSize()
                     )
+                    Box(Modifier.align(Alignment.TopEnd)) {
+                        EpubImageDiagnosticsPanel(imageDiagnostics)
+                    }
+                }
+            }
+            state.syncStatus?.let { message ->
+                Surface(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+                    Text(message, modifier = Modifier.padding(8.dp), style = MaterialTheme.typography.bodySmall)
                 }
             }
         }

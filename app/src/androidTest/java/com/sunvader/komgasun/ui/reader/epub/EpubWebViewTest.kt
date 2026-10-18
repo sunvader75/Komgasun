@@ -25,7 +25,10 @@ import java.util.zip.ZipOutputStream
 class EpubWebViewTest {
     @get:Rule val compose = createComposeRule()
 
-    @Test fun paginatedResourcesSecurityAndReflow() {
+    @Test fun paginatedResourcesSecurityAndReflow() = exerciseReader(false)
+    @Test fun rejectedNormalRasterRecoversWithoutNetwork() = exerciseReader(true)
+
+    private fun exerciseReader(induceFailure: Boolean) {
         val file = File.createTempFile("epub-webview-", ".epub")
         try {
             fun cover(source: String = "pixel.png", extra: String = "", attributes: String = "") =
@@ -50,7 +53,13 @@ class EpubWebViewTest {
             lateinit var web: EpubWebView
             compose.setContent {
                 Box(Modifier.requiredSize(if (wide.value) 360.dp else 240.dp, if (wide.value) 240.dp else 360.dp).testTag("reader")) {
-                    AndroidView(factory = { context -> EpubWebView(context).also { view ->
+                    AndroidView(factory = { context -> object : EpubWebView(context) {
+                        override fun resource(uri: Uri, method: String, mainFrame: Boolean): android.webkit.WebResourceResponse {
+                            if (induceFailure && uri.path == "/pixel.png") return android.webkit.WebResourceResponse(
+                                "text/plain", "UTF-8", 403, "Blocked", emptyMap(), java.io.ByteArrayInputStream(byteArrayOf()))
+                            return super.resource(uri, method, mainFrame)
+                        }
+                    }.also { view ->
                         web = view
                         view.onMeasured = { token, page, count ->
                             val s = state.value
@@ -80,30 +89,82 @@ class EpubWebViewTest {
             compose.runOnIdle { state.value = state.value.copy(proportion = 0.5, fontSizeSp = 26); wide.value = true }
             compose.waitUntil(5000) { state.value.pageCount > 1 && kotlin.math.abs(state.value.proportion - 0.5) < 0.1 }
             compose.onNodeWithTag("reader").performTouchInput { swipeUp() }
+            assertEquals("true", js(web, "location.origin==='https://epub.invalid' && location.href===document.baseURI && location.search==='?generation='+" + state.value.chapterGeneration + " && !location.href.startsWith('chrome-error:')"))
+            // Duplicate completion must preserve the current API and DOM, including while pending.
+            assertEquals("true", js(web, "(window.__savedApi=window.__epub,window.__savedBody=document.body.firstChild,true)"))
+            compose.runOnIdle { repeat(8) { web.webViewClient.onPageFinished(web, web.url) } }
+            assertEquals("true", js(web, "window.__savedApi===window.__epub && window.__savedBody===document.body.firstChild"))
+            assertEquals("false", js(web, EpubHtml.install("\"<p>must not replace</p>\"", "[]", "null", "\"chrome-error://chromewebdata/\"")))
+            assertEquals("true", js(web, "window.__savedApi===window.__epub && window.__savedBody===document.body.firstChild"))
             assertEquals("0", js(web, "window.scrollY"))
             assertEquals("null", js(web, "window.pwned || null"))
             assertEquals("0", js(web, "document.querySelectorAll('script,base,meta[http-equiv=refresh],iframe').length"))
+            val decoded = AtomicReference(false)
+            compose.runOnIdle {
+                web.evaluateJavascript("(function wait(){if(Array.from(document.images).every(i=>i.complete&&i.naturalWidth>0))window.__decoded=true;else setTimeout(wait,50);})()") {}
+            }
+            compose.waitUntil(10000) {
+                web.post { web.evaluateJavascript("window.__decoded===true") { decoded.set(it == "true") } }
+                decoded.get()
+            }
             assertEquals("true", js(web, "document.querySelector('img').complete && document.querySelector('img').naturalWidth>0"))
             assertEquals("2", js(web, "document.querySelectorAll('img').length"))
             assertEquals("true", js(web, "Array.from(document.querySelectorAll('img')).every(i=>i.complete && i.naturalWidth>0)"))
-            assertEquals("true", js(web, "document.querySelectorAll('img')[0].getAttribute('src')==='pixel.png'"))
-            assertEquals("true", js(web, "document.querySelectorAll('img')[1].attributes.length===1 && document.querySelectorAll('img')[1].src==='https://epub.invalid/pixel.png'"))
+            if (induceFailure) {
+                assertEquals("true", js(web, "Array.from(document.images).every(i=>i.src.startsWith('blob:https://epub.invalid/'))"))
+                assertEquals("false", js(web, "window.__epub.recover(0,'data:image/svg+xml;base64,PHN2Zy8+')"))
+                assertEquals("false", js(web, "window.__epub.recover(0,'data:image/png;base64,AA==')"))
+            } else {
+                assertEquals("true", js(web, "document.querySelectorAll('img')[0].getAttribute('src')==='https://epub.invalid/pixel.png'"))
+                assertEquals("true", js(web, "document.querySelectorAll('img')[1].attributes.length===1 && document.querySelectorAll('img')[1].src==='https://epub.invalid/pixel.png'"))
+            }
+            // Recovery must not replace the immutable validated source with the live Blob URL.
+            assertEquals("true", js(web, "window.__epub.images().every(r=>r[1]==='https://epub.invalid/pixel.png' && r[8]==='ATTR' && r[10]===1 && r[11]==='APP_CHAPTER')"))
+            assertEquals("true", js(web, "(function(){document.images[0].removeAttribute('src');return window.__epub.images()[0][1]==='https://epub.invalid/pixel.png';})()"))
             assertEquals("0", js(web, "document.querySelectorAll('svg,foreignObject,animate').length"))
             assertEquals("\"rgb(12, 34, 56)\"",  js(web, "getComputedStyle(document.querySelector('p')).color"))
             compose.runOnIdle {
+                assertEquals(200, web.resource(Uri.parse(web.url!!), mainFrame = true).statusCode)
+                assertEquals(403, web.resource(Uri.parse("https://epub.invalid/a.html?generation=-1"), mainFrame = true).statusCode)
                 assertEquals(403, web.resource(Uri.parse("https://evil.invalid/style.css")).statusCode)
                 assertEquals(403, web.resource(Uri.parse("file:///etc/passwd")).statusCode)
                 assertEquals(403, web.resource(Uri.parse("https://epub.invalid/%73tyle.css")).statusCode)
                 assertEquals(403, web.resource(Uri.parse("https://epub.invalid/a.html")).statusCode)
                 assertEquals(200, web.resource(Uri.parse("https://epub.invalid/style.css")).statusCode)
                 val raster = web.resource(Uri.parse("https://epub.invalid/pixel.png"))
-                assertEquals(200, raster.statusCode)
-                assertEquals("image/png", raster.mimeType)
-                assertTrue(raster.data.use { it.readBytes() }.contentEquals(entries.getValue("pixel.png")))
+                assertEquals(if (induceFailure) 403 else 200, raster.statusCode)
+                if (!induceFailure) {
+                    assertEquals("image/png", raster.mimeType)
+                    assertTrue(raster.data.use { it.readBytes() }.contentEquals(entries.getValue("pixel.png")))
+                }
                 assertEquals(403, web.resource(Uri.parse("https://epub.invalid/missing.png")).statusCode)
                 assertEquals(403, web.resource(Uri.parse("https://epub.invalid/pixel.png?x=1")).statusCode)
             }
         } finally { file.delete() }
+    }
+
+    @Test fun explicitBaseRetainsRelativeAndCategorizesEmptySources() {
+        lateinit var web: EpubWebView
+        compose.setContent { AndroidView(factory = { EpubWebView(it).also { v -> web = v; v.loadDataWithBaseURL(EpubHtml.ORIGIN + "/shell", EpubHtml.shell, "text/html", "UTF-8", null) } }, onRelease = { it.dispose() }) }
+        compose.waitUntil(5000) { web.progress == 100 }
+        val html = "<img><img src=''><img src='https://outside.invalid/a'><img src='../pixel.png'>"
+        assertEquals("true", js(web, EpubHtml.install(org.json.JSONObject.quote(html), "[\"https://epub.invalid/pixel.png\"]", "\"https://epub.invalid/chapters/a.html\"")))
+        assertEquals("true", js(web, "(function(){const r=window.__epub.images();return r[0][1]==='' && r[0][8]==='MISSING_ATTR' && r[1][1]==='' && r[1][8]==='EMPTY_ATTR' && r[2][1]==='' && r[3][1]==='https://epub.invalid/pixel.png' && document.images[3].getAttribute('src')===r[3][1] && r.every(x=>x[11]==='APP_CHAPTER' && x[10]===1);})()"))
+    }
+
+    @Test fun blankDocumentCannotReceivePublication() {
+        lateinit var web: EpubWebView
+        compose.setContent { AndroidView(factory = { EpubWebView(it).also { v -> web = v } }, onRelease = { it.dispose() }) }
+        assertEquals("false", js(web, EpubHtml.install("\"<p>Rejected publication</p>\"", "[]", "\"https://epub.invalid/a?generation=1\"", "\"https://epub.invalid/a?generation=1\"")))
+        assertEquals("true", js(web, "!Object.prototype.hasOwnProperty.call(window,'__epub') && !document.querySelector('p')"))
+    }
+
+    @Test fun canonicalEncodingMatchesAndroid() {
+        val path = "dir/a +!'()~*_-.,;:@&=é中.jpg"
+        val pub = EpubPublication(File("unused"), "book.opf", mapOf(path to "image/jpeg"))
+        val source = EpubHtml.ORIGIN + "/" + path.split('/').joinToString("/") { Uri.encode(it) }
+        assertEquals("https://epub.invalid/dir/a%20%2B!'()~*_-.%2C%3B%3A%40%26%3D%C3%A9%E4%B8%AD.jpg", source)
+        assertEquals(path, pub.canonicalPath(source))
     }
 
     private fun js(view: EpubWebView, script: String): String {

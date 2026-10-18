@@ -19,9 +19,9 @@ fun BookDto.readingStatus(): BookReadingStatus {
     val progress = readProgress
     if (progress?.completed == true) return BookReadingStatus(readBadge = "✓ Leído", unavailable = unavailable)
     if (progress == null || progress.page <= 0) return BookReadingStatus(unavailable = unavailable)
-    // EPUB stores a chapter number in page; media.pagesCount is not a chapter total.
+    // Komga's EPUB server position is not a chapter index or a physical page.
     if (detectBookType() == BookType.EPUB) {
-        return BookReadingStatus(detail = "En lectura · Capítulo ${progress.page}", unavailable = unavailable)
+        return BookReadingStatus(detail = "En lectura", unavailable = unavailable)
     }
     if (media.pagesCount <= 0) {
         return BookReadingStatus(detail = "En lectura · Pág. ${progress.page}", unavailable = unavailable)

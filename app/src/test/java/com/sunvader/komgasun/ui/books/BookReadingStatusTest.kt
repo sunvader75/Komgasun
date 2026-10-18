@@ -53,7 +53,7 @@ class BookReadingStatusTest {
     @Test fun epubChapterNeverUsesMediaPageDenominator() {
         for (total in listOf(0, 10, 100)) {
             val s = book(page = 35, total = total, name = "book.epub").readingStatus()
-            assertEquals("En lectura · Capítulo 35", s.detail)
+            assertEquals("En lectura", s.detail)
             assertNull(s.fraction)
             assertNull(s.readBadge)
         }

@@ -11,6 +11,16 @@ class EpubHtmlTest {
         assertFalse(shell.contains("<script"))
         assertTrue(shell.contains("<body></body>"))
     }
+    @Test fun recoveryDoesNotPermitPublicationDataOrSvg() {
+        assertTrue(EpubHtml.shell.contains("img-src https://epub.invalid blob:;"))
+        assertFalse(EpubHtml.shell.contains("data:"))
+        val bootstrap = EpubHtml.install("\"<img src='data:image/svg+xml,bad'>\"")
+        assertTrue(bootstrap.contains("e.removeAttribute('srcset')"))
+        assertTrue(bootstrap.contains("!allowedRasterUrls.has(url.href)"))
+        assertTrue(bootstrap.contains("retried.has(i)"))
+        assertTrue(bootstrap.contains("URL.revokeObjectURL(url)"))
+        assertTrue(bootstrap.contains("e.naturalWidth===0"))
+    }
     @Test fun bootstrapDoesNotInterpolatePublicationIntoMarkup() {
         assertFalse(EpubHtml.shell.contains("PUBLICATION_MARKER"))
         val bootstrap = EpubHtml.install("\"PUBLICATION_MARKER\"")

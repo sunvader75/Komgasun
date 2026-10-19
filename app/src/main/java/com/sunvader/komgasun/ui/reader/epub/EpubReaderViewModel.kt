@@ -33,6 +33,7 @@ data class EpubReaderUiState(
     val proportion: Double = 0.0,
     val chapterGeneration: Long = 0,
     val fontSizeSp: Int = 18,
+    val useOriginalFonts: Boolean = false,
     val isDarkTheme: Boolean = true,
     val showControls: Boolean = false,
     val syncStatus: String? = null,
@@ -46,7 +47,8 @@ class EpubReaderViewModel(
 ) : AndroidViewModel(application) {
     private val readerPreferences = application.getSharedPreferences("epub_reader_settings", 0)
     private val _uiState = MutableStateFlow(
-        EpubReaderUiState(isDarkTheme = readerPreferences.getBoolean("dark_theme", true))
+        EpubReaderUiState(isDarkTheme = readerPreferences.getBoolean("dark_theme", true),
+            useOriginalFonts = readerPreferences.getBoolean("original_fonts", false))
     )
     val uiState: StateFlow<EpubReaderUiState> = _uiState.asStateFlow()
     private val preferences = application.getSharedPreferences("epub_locators", 0)
@@ -367,6 +369,12 @@ class EpubReaderViewModel(
     }
     fun increaseFontSize() { _uiState.update { it.copy(fontSizeSp = (it.fontSizeSp + 2).coerceAtMost(32), pageCount = 0) } }
     fun decreaseFontSize() { _uiState.update { it.copy(fontSizeSp = (it.fontSizeSp - 2).coerceAtLeast(12), pageCount = 0) } }
+    fun setUseOriginalFonts(enabled: Boolean) {
+        readerPreferences.edit().putBoolean("original_fonts", enabled).apply()
+        bookPages = null
+        _uiState.update { it.copy(useOriginalFonts = enabled, pageCount = 0) }
+    }
+
     fun toggleTheme() {
         val isDarkTheme = !_uiState.value.isDarkTheme
         readerPreferences.edit().putBoolean("dark_theme", isDarkTheme).apply()

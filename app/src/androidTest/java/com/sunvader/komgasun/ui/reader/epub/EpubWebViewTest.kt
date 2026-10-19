@@ -152,6 +152,66 @@ class EpubWebViewTest {
         assertEquals("true", js(web, "(function(){const r=window.__epub.images();return r[0][1]==='' && r[0][8]==='MISSING_ATTR' && r[1][1]==='' && r[1][8]==='EMPTY_ATTR' && r[2][1]==='' && r[3][1]==='https://epub.invalid/pixel.png' && document.images[3].getAttribute('src')===r[3][1] && r.every(x=>x[11]==='APP_CHAPTER' && x[10]===1);})()"))
     }
 
+    @Test fun localOpenTypeFontsAreServedWithoutOpeningOtherResources() {
+        val file = File.createTempFile("epub-font-", ".epub")
+        try {
+            val font = byteArrayOf(0x4f, 0x54, 0x54, 0x4f)
+            val entries = mapOf(
+                "META-INF/container.xml" to "<container xmlns='urn:oasis:names:tc:opendocument:xmlns:container'><rootfiles><rootfile full-path='book.opf'/></rootfiles></container>".toByteArray(),
+                "book.opf" to "<package xmlns='http://www.idpf.org/2007/opf'><manifest><item id='a' href='a.html' media-type='text/html'/><item id='font' href='font.otf' media-type='font/otf'/><item id='legacy' href='legacy.otf' media-type='application/vnd.ms-opentype'/><item id='js' href='bad.js' media-type='text/javascript'/></manifest><spine><itemref idref='a'/></spine></package>".toByteArray(),
+                "a.html" to "<p>Text</p>".toByteArray(), "font.otf" to font,
+                "legacy.otf" to font, "bad.js" to "alert(1)".toByteArray()
+            )
+            ZipOutputStream(file.outputStream()).use { zip -> entries.forEach { (name, data) ->
+                zip.putNextEntry(ZipEntry(name)); zip.write(data); zip.closeEntry()
+            } }
+            val book = EpubParser.parse(file)
+            lateinit var web: EpubWebView
+            compose.setContent { AndroidView(modifier = Modifier.requiredSize(320.dp, 480.dp), factory = { EpubWebView(it).also { v -> web = v; v.render(EpubReaderUiState(epubBook = book, chapterGeneration = 1)) } }, onRelease = { it.dispose() }) }
+            compose.runOnIdle {
+                for ((path, mime) in listOf("font.otf" to "font/otf", "legacy.otf" to "application/vnd.ms-opentype")) {
+                    val response = web.resource(Uri.parse("https://epub.invalid/$path"))
+                    assertEquals(200, response.statusCode)
+                    assertEquals(mime, response.mimeType)
+                    assertTrue(font.contentEquals(response.data.use { it.readBytes() }))
+                }
+                for (url in listOf("https://evil.invalid/font.otf", "file:///font.otf", "https://epub.invalid/font.otf?q=1", "https://epub.invalid/missing.otf", "https://epub.invalid/bad.js", "https://epub.invalid/a.html", "https://epub.invalid/../font.otf")) {
+                    val response = web.resource(Uri.parse(url))
+                    assertEquals(url, 403, response.statusCode)
+                    assertEquals("text/plain", response.mimeType)
+                    assertEquals(0, response.data.use { it.readBytes() }.size)
+                }
+                val post = web.resource(Uri.parse("https://epub.invalid/font.otf"), method = "POST")
+                assertEquals(403, post.statusCode)
+                assertEquals(0, post.data.use { it.readBytes() }.size)
+            }
+        } finally { file.delete() }
+    }
+
+    @Test fun originalTypographyPreservesRelativeSizeAndLeading() {
+        lateinit var web: EpubWebView
+        compose.setContent { AndroidView(modifier = Modifier.requiredSize(320.dp, 480.dp), factory = { EpubWebView(it).also { v -> web = v; v.loadDataWithBaseURL(EpubHtml.ORIGIN + "/shell", EpubHtml.shell, "text/html", "UTF-8", null) } }, onRelease = { it.dispose() }) }
+        compose.waitUntil(5000) { var loaded = false; compose.runOnIdle { loaded = web.progress == 100 }; loaded }
+        val html = "<style>.notice{font-family:monospace;font-size:0.87em;line-height:1.2}</style><p>Main text</p><p class='notice'>Notice</p>"
+        assertEquals("true", js(web, EpubHtml.install(org.json.JSONObject.quote(html))))
+        assertEquals("true", js(web, "(function(){window.__epub.apply(0,20,true,true);const p=document.querySelectorAll('p'),a=getComputedStyle(p[0]),b=getComputedStyle(p[1]);return a.fontFamily==='serif' && b.fontFamily==='monospace' && Math.abs(parseFloat(b.fontSize)-17.4)<0.1 && Math.abs(parseFloat(b.lineHeight)-20.88)<0.2;})()"))
+        assertEquals("true", js(web, "(function(){window.__epub.apply(0,20,true,false);const p=document.querySelectorAll('p');return Array.from(p).every(e=>getComputedStyle(e).fontSize==='20px') && getComputedStyle(p[0]).fontFamily.includes('Literata');})()"))
+    }
+
+    @Test fun originalFontsCanBeEnabledAndDisabled() {
+        lateinit var web: EpubWebView
+        compose.setContent { AndroidView(modifier = Modifier.requiredSize(320.dp, 480.dp), factory = { EpubWebView(it).also { v -> web = v; v.loadDataWithBaseURL(EpubHtml.ORIGIN + "/shell", EpubHtml.shell, "text/html", "UTF-8", null) } }, onRelease = { it.dispose() }) }
+        compose.waitUntil(5000) {
+            var loaded = false
+            compose.runOnIdle { loaded = web.progress == 100 }
+            loaded
+        }
+        assertEquals("true", js(web, EpubHtml.install(org.json.JSONObject.quote("<body style='font-family: monospace'><p>Publisher text</p></body>"))))
+        assertEquals("true", js(web, "(function(){window.__epub.apply(0,18,true);return getComputedStyle(document.querySelector('p')).fontFamily.includes('Literata');})()"))
+        assertEquals("true", js(web, "(function(){window.__epub.apply(0,18,true,true);return getComputedStyle(document.querySelector('p')).fontFamily==='monospace';})()"))
+        assertEquals("true", js(web, "(function(){window.__epub.apply(0,18,true,false);return getComputedStyle(document.querySelector('p')).fontFamily.includes('Literata');})()"))
+    }
+
     @Test fun blankDocumentCannotReceivePublication() {
         lateinit var web: EpubWebView
         compose.setContent { AndroidView(factory = { EpubWebView(it).also { v -> web = v } }, onRelease = { it.dispose() }) }

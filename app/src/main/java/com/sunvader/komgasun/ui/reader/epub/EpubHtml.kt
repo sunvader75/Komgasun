@@ -63,20 +63,26 @@ object EpubHtml {
             const done=()=>{pendingStyles--;e.removeEventListener('load',done);e.removeEventListener('error',done);};
             e.addEventListener('load',done);e.addEventListener('error',done);
           });
+          // Keep publisher body font selectors and inline family without adopting layout styles.
+          document.documentElement.style.fontFamily='serif';
+          document.body.className=parsed.body.className;
+          document.body.style.fontFamily=parsed.body.style.fontFamily;
           const viewport=document.createElement('div'), pages=document.createElement('div');
           document.body.replaceChildren(viewport); viewport.append(pages);
           Array.from(parsed.head.children).forEach(e=>{if(['STYLE','LINK'].includes(e.tagName))pages.append(e);});
           Array.from(parsed.body.childNodes).forEach(e=>pages.append(e));
           const css=document.createElement('style'); css.textContent=`
             html,body {width:100%!important;height:100%!important;margin:0!important;padding:0!important;overflow:hidden!important;}
-            * {box-sizing:border-box;max-width:100%!important;position:static!important;float:none!important;transform:none!important;font-size:inherit!important;line-height:inherit!important;}
+            * {box-sizing:border-box;max-width:100%!important;position:static!important;float:none!important;transform:none!important;}
             p,span,div,h1,h2,h3,h4,h5,h6 {overflow-wrap:anywhere;}
             p {margin-top:0;margin-bottom:0.35em;text-indent:1.5em;text-align:justify;text-justify:inter-word;hyphens:auto;-webkit-hyphens:auto;}
-            h1,h2,h3,h4,h5,h6 {text-indent:0;text-align:center;margin-top:1.2em;margin-bottom:0.6em;line-height:1.3!important;break-after:avoid;}
+            h1,h2,h3,h4,h5,h6 {text-indent:0;text-align:center;margin-top:1.2em;margin-bottom:0.6em;break-after:avoid;}
             pre,table {text-indent:0;max-width:100%!important;}
             img {display:block!important;margin:0 auto!important;width:auto!important;height:auto!important;max-width:100%!important;max-height:100%!important;object-fit:contain!important;break-inside:avoid;}
             table {table-layout:fixed;width:100%;} pre {white-space:pre-wrap!important;break-inside:auto!important;}
           `; document.head.append(css);
+          const readerTypography=document.createElement('style');document.head.append(readerTypography);
+          let typographyMode=null;
           let fraction=0, font=18, dark=true;
           const images=Array.from(pages.querySelectorAll('img'));
           const validatedSources=images.map(e=>e.getAttribute('src') || '');
@@ -95,12 +101,17 @@ object EpubHtml {
             const release=()=>{URL.revokeObjectURL(url);images[i].removeEventListener('load',release);images[i].removeEventListener('error',release);};
             images[i].addEventListener('load',release);images[i].addEventListener('error',release);
             images[i].src=url;return true;
-          },apply:function(f,size,theme){
+          },apply:function(f,size,theme,originalFonts=false){
             fraction=Math.max(0,Math.min(1,f));font=size;dark=theme;
+            if(typographyMode!==originalFonts){
+              typographyMode=originalFonts;
+              readerTypography.textContent=originalFonts?'':'* {font-size:inherit!important;line-height:inherit!important;} h1,h2,h3,h4,h5,h6 {line-height:1.3!important;}';
+            }
             const w=window.innerWidth,h=window.innerHeight;
             if(w<1||h<1)return [0,0];
             viewport.style.cssText='position:fixed!important;inset:0!important;overflow:hidden!important;';
-            pages.style.cssText='position:relative!important;margin:0!important;padding:0!important;width:'+w+'px!important;height:'+h+'px!important;column-width:'+w+'px!important;column-gap:0!important;column-fill:auto!important;overflow:visible!important;transform:none!important;line-height:1.65!important;font-size:'+font+'px!important;font-family:"Literata","Merriweather","Georgia","Droid Serif",serif!important;color:'+(dark?'#e0e0e0':'#212121')+'!important;background:'+(dark?'#121212':'white')+'!important;';
+            pages.style.cssText='position:relative!important;margin:0!important;padding:0!important;width:'+w+'px!important;height:'+h+'px!important;column-width:'+w+'px!important;column-gap:0!important;column-fill:auto!important;overflow:visible!important;transform:none!important;line-height:1.65!important;font-size:'+font+'px!important;color:'+(dark?'#e0e0e0':'#212121')+'!important;background:'+(dark?'#121212':'white')+'!important;';
+            if(!originalFonts)pages.style.setProperty('font-family','"Literata","Merriweather","Georgia","Droid Serif",serif','important');
             document.body.style.background=dark?'#121212':'white';
             const n=Math.max(1,Math.ceil(pages.scrollWidth/w));
             // Do not commit an initial/end locator against an image/font/CSS placeholder layout.

@@ -19,6 +19,7 @@ internal class EpubBookPaginator(
     private var fingerprint: String? = null
     private var cacheKey: String? = null
     private var fontSize = 18
+    private var originalFonts = false
     private var generation = 0L
     private var chapter = 0
     private val counts = mutableListOf<Int>()
@@ -56,12 +57,13 @@ internal class EpubBookPaginator(
     }
 
     @Suppress("UNUSED_PARAMETER")
-    fun paginate(book: EpubBook, font: Int, dark: Boolean) {
+    fun paginate(book: EpubBook, font: Int, dark: Boolean, useOriginalFonts: Boolean = false) {
         // Color does not change pagination. Measure in a fixed theme, including mid-calculation.
-        if (closed || (source === book && fontSize == font)) return
+        if (closed || (source === book && fontSize == font && originalFonts == useOriginalFonts)) return
         if (source !== book) fingerprint = null
         source = book
         fontSize = font
+        originalFonts = useOriginalFonts
         restart()
     }
 
@@ -91,7 +93,7 @@ internal class EpubBookPaginator(
             WebView.getCurrentWebViewPackage()?.versionName ?: settings.userAgentString
         else settings.userAgentString
         val renderer = "${metrics.densityDpi}:${metrics.scaledDensity}:${android.os.Build.VERSION.SDK_INT}:$engine:" +
-            EpubPaginationCache.hash(EpubHtml.shell + EpubHtml.install("\"\""))
+            EpubPaginationCache.hash(EpubHtml.shell + EpubHtml.install("\"\"")) + ":originalFonts=$originalFonts"
         cacheJob = scope.launch {
             try {
                 val (identity, key, cached) = withContext(Dispatchers.IO) {
@@ -120,7 +122,7 @@ internal class EpubBookPaginator(
         paginationPaused = false
         render(EpubReaderUiState(isLoading = false, isReady = true, epubBook = book,
             currentChapterIndex = chapter, chapterGeneration = ++generation,
-            fontSizeSp = fontSize, isDarkTheme = true))
+            fontSizeSp = fontSize, isDarkTheme = true, useOriginalFonts = originalFonts))
         postDelayed(timeout, 20_000)
     }
 

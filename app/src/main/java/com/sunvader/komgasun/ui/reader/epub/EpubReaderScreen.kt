@@ -90,14 +90,14 @@ fun EpubReaderScreen(
     val subduedColor = if (state.isDarkTheme) Color.White.copy(alpha = 0.55f) else Color.Black.copy(alpha = 0.55f)
     val overlayBg = if (state.isDarkTheme) Color(0xFF1E1E1E).copy(alpha = 0.95f) else Color.White.copy(alpha = 0.95f)
     val totalChapters = state.epubBook?.chapters?.size ?: 0
-    var bookPageMap by remember(state.epubBook, state.fontSizeSp) {
+    var bookPageMap by remember(state.epubBook, state.fontSizeSp, state.useOriginalFonts) {
         mutableStateOf<EpubBookPageMap?>(null)
     }
-    var paginationFailed by remember(state.epubBook, state.fontSizeSp) {
+    var paginationFailed by remember(state.epubBook, state.fontSizeSp, state.useOriginalFonts) {
         mutableStateOf(false)
     }
 
-    var measuredChapters by remember(state.epubBook, state.fontSizeSp) { mutableStateOf(0) }
+    var measuredChapters by remember(state.epubBook, state.fontSizeSp, state.useOriginalFonts) { mutableStateOf(0) }
 
     if (showDeleteDialog) {
         AlertDialog(
@@ -219,7 +219,7 @@ fun EpubReaderScreen(
                                     paginationFailed = failed
                                 }
                                 paginator.onProgress = { done, _ -> measuredChapters = done }
-                                state.epubBook?.let { paginator.paginate(it, state.fontSizeSp, state.isDarkTheme) }
+                                state.epubBook?.let { paginator.paginate(it, state.fontSizeSp, state.isDarkTheme, state.useOriginalFonts) }
                             },
                             onRelease = { it.release() },
                             modifier = Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 16.dp)
@@ -410,6 +410,18 @@ fun EpubReaderScreen(
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Usar fuentes originales del EPUB", color = themeTextColor,
+                                    modifier = Modifier.weight(1f))
+                                androidx.compose.material3.Switch(
+                                    checked = state.useOriginalFonts,
+                                    onCheckedChange = viewModel::setUseOriginalFonts
+                                )
+                            }
                             val pages = bookPageMap
                             // Scrubber Slider + Direct Chapter Navigation Buttons
                             Row(

@@ -4,6 +4,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class EpubHtmlTest {
+    @Test fun originalFontsAreOptionalAndKeepReaderFallback() {
+        val bootstrap = EpubHtml.install("\"<p>Text</p>\"")
+        assertTrue(bootstrap.contains("apply:function(f,size,theme,originalFonts=false)"))
+        assertTrue(bootstrap.contains("if(!originalFonts)pages.style.setProperty('font-family'"))
+        assertTrue(bootstrap.contains("\"Literata\",\"Merriweather\",\"Georgia\",\"Droid Serif\",serif"))
+        assertTrue(EpubHtml.shell.contains("font-src https://epub.invalid;"))
+    }
+
     @Test fun cspPrecedesEmptyPublicationSurface() {
         val shell = EpubHtml.shell
         assertTrue(shell.indexOf("Content-Security-Policy") < shell.indexOf("<body>"))

@@ -41,6 +41,7 @@ open class EpubWebView(context: Context) : WebView(context) {
     private var requestedFraction = 0.0
     private var font = 18
     private var dark = true
+    private var originalFonts = false
     private var startX = 0f
     private var startY = 0f
     private var evaluation = 0L
@@ -162,7 +163,7 @@ open class EpubWebView(context: Context) : WebView(context) {
             val path = publication.canonicalPath(uri.toString())
             val type = publication.mediaTypes.getValue(path)
             // HTML, SVG, JavaScript and generic binary are never served as subresources.
-            if (type !in setOf("text/css", "image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "font/woff", "font/woff2", "font/ttf", "application/vnd.ms-opentype", "application/font-woff")) return denied("MIME")
+            if (type !in setOf("text/css", "image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "font/woff", "font/woff2", "font/ttf", "font/otf", "application/vnd.ms-opentype", "application/font-woff")) return denied("MIME")
             val data = publication.readCanonicalResource(uri.toString())
             record("HTTP200 reason=NONE mime=$type bytes=${data.bytes.size}")
             android.util.Log.d("EpubDebug", "Resource SERVED: uri=$uri, mime=$type, bytes=${data.bytes.size}")
@@ -179,6 +180,7 @@ open class EpubWebView(context: Context) : WebView(context) {
         requestedFraction = state.proportion.takeIf { it.isFinite() }?.coerceIn(0.0, 1.0) ?: 0.0
         font = state.fontSizeSp.coerceIn(12, 32)
         dark = state.isDarkTheme
+        originalFonts = state.useOriginalFonts
         if (token != state.chapterGeneration || book !== state.epubBook) {
             token = state.chapterGeneration
             recovery = EpubImageRecovery(token)
@@ -208,14 +210,15 @@ open class EpubWebView(context: Context) : WebView(context) {
         val fraction = requestedFraction
         val capturedFont = font
         val capturedDark = dark
+        val capturedOriginalFonts = originalFonts
         val capturedWidth = width
         val capturedHeight = height
         val measuringBook = onPaginationReady != null
         val script = if (measuringBook)
-            "(function(){const r=window.__epub.apply($fraction,$font,$dark);return [r[0],r[1],window.__epub.settled()];})()"
-        else "window.__epub.apply($fraction,$font,$dark)"
+            "(function(){const r=window.__epub.apply($fraction,$font,$dark,$originalFonts);return [r[0],r[1],window.__epub.settled()];})()"
+        else "window.__epub.apply($fraction,$font,$dark,$originalFonts)"
         evaluateJavascript(script) { result ->
-            android.util.Log.d("EpubDebug", "apply($fraction,$font,$dark) result=$result (w=$width, h=$height)")
+            android.util.Log.d("EpubDebug", "apply($fraction,$font,$dark,$originalFonts) result=$result (w=$width, h=$height)")
             if (disposed || token != captured || serial != evaluation) return@evaluateJavascript
             callbackPending = false
             try {
@@ -226,7 +229,7 @@ open class EpubWebView(context: Context) : WebView(context) {
                 if (!page.isFinite() || !count.isFinite() || page % 1.0 != 0.0 || count % 1.0 != 0.0 ||
                     count !in 1.0..100000.0 || page < 0 || page >= count) return@evaluateJavascript
                 // A newer state must not be overwritten by an older async layout callback.
-                if (fraction != requestedFraction || capturedFont != font || capturedDark != dark ||
+                if (fraction != requestedFraction || capturedFont != font || capturedDark != dark || capturedOriginalFonts != originalFonts ||
                     (measuringBook && (capturedWidth != width || capturedHeight != height))) {
                     measurePage()
                     return@evaluateJavascript

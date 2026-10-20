@@ -15,13 +15,18 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
+/** Desenvuelve contextos hasta encontrar una Activity; devuelve null cuando no hay una accesible. */
 private tailrec fun Context.readerActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.readerActivity()
     else -> null
 }
 
-/** Scoped to the comic reader: never changes the PDF/EPUB or app-wide bar policy. */
+/**
+ * Oculta barras solo durante la composición del lector de cómics y al reanudarlo, permitiendo mostrarlas con un gesto.
+ * Al salir restaura visibilidad y comportamiento previos y retira el observador; sin ventana no actúa.
+ * No modifica la política global de barras ni la de los lectores PDF/EPUB.
+ */
 @Composable
 internal fun ComicImmersiveMode() {
     val activity = LocalContext.current.readerActivity()
@@ -35,6 +40,7 @@ internal fun ComicImmersiveMode() {
         val statusVisible = insets?.isVisible(WindowInsetsCompat.Type.statusBars()) ?: true
         val navigationVisible = insets?.isVisible(WindowInsetsCompat.Type.navigationBars()) ?: true
         val previousBehavior = controller.systemBarsBehavior
+        /** Aplica barras transitorias por gesto y vuelve a ocultar ambas barras de sistema. */
         fun hideBars() {
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             controller.hide(WindowInsetsCompat.Type.systemBars())

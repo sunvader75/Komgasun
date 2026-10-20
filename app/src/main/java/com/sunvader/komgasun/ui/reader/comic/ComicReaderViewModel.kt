@@ -35,6 +35,11 @@ class ComicReaderViewModel(
         loadPages()
     }
 
+    /**
+     * Carga metadatos y páginas en viewModelScope; publica carga, disponibilidad o error de páginas.
+     * Reanuda el progreso del servidor (desde uno), acotándolo a índices desde cero;
+     * los libros terminados empiezan de nuevo. Un fallo de metadatos no impide abrir las páginas.
+     */
     fun loadPages() {
         _uiState.update { it.copy(isLoading = true, isReady = false, errorMessage = null) }
         viewModelScope.launch {
@@ -49,7 +54,7 @@ class ComicReaderViewModel(
                 val isCompleted = readProgress?.completed == true
                 val savedPage = readProgress?.page ?: 1
 
-                // If already completed, re-reading starts from page 1 (index 0). Otherwise resume.
+                // Si ya está terminado, la relectura empieza en la página 1 (índice 0); si no, se reanuda.
                 val initialPageIndex = if (isCompleted) {
                     0
                 } else {
@@ -80,6 +85,11 @@ class ComicReaderViewModel(
         }
     }
 
+    /**
+     * Recibe un índice válido desde cero y el total; ignora cambios mientras el lector no está listo.
+     * Actualiza la posición y solicita sincronización asíncrona desde uno, omitiendo repeticiones consecutivas.
+     * Marca terminado al alcanzar el total positivo; no espera confirmación del servidor.
+     */
     fun onPageChanged(pageIndex: Int, totalPages: Int) {
         if (!_uiState.value.isReady) return
         _uiState.update { it.copy(currentPage = pageIndex, initialPage = pageIndex) }
@@ -91,6 +101,7 @@ class ComicReaderViewModel(
         repository.syncReadProgressAsync(bookId = bookId, page = pageNumber, completed = isCompleted)
     }
 
+    /** Solicita sincronizar la posición actual si está dentro del total, incluso si ya se envió; no espera su entrega. */
     fun flushProgress() {
         val total = _uiState.value.pages.size
         val pageNumber = _uiState.value.currentPage + 1
@@ -100,6 +111,7 @@ class ComicReaderViewModel(
         }
     }
 
+    /** Envía el último progreso y reinicia disponibilidad y deduplicación para una nueva apertura, conservando las páginas. */
     fun onReaderClosed() {
         flushProgress()
         _uiState.update {
@@ -119,6 +131,7 @@ class ComicReaderViewModel(
         _uiState.update { it.copy(showControls = visible) }
     }
 
+    /** Solicita borrar el archivo del servidor y entrega su Result a [onDone] en viewModelScope; no cierra el lector por sí sola. */
     fun deleteBookFile(onDone: (Result<Unit>) -> Unit) {
         viewModelScope.launch {
             val result = repository.deleteBookFile(bookId)

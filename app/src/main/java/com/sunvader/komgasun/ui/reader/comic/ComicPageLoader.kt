@@ -9,8 +9,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/** Main-thread confined session scheduler. At most two loads and five retained results.
- * Display consumes the exact decoded result, not another URL request. */
+/**
+ * Planificador de sesión confinado al hilo principal, incluido [scope]: como máximo dos cargas y cinco resultados retenidos.
+ * [load] recibe índices desde cero; la vista consume el resultado ya decodificado sin otra solicitud por URL.
+ */
 internal class ComicPageLoader<T : Any>(
     private val scope: CoroutineScope,
     private val total: Int,
@@ -23,14 +25,14 @@ internal class ComicPageLoader<T : Any>(
     private var window = emptyList<Int>()
     private var closed = false
 
+    /** Recalcula la ventana desde [current], cancela cargas ajenas y prioriza la actual; tras cerrar no hace nada. */
     fun moveTo(current: Int) {
         if (closed) return
         window = readerPageWindow(current, total)
         jobs.keys.toList().filter { it !in window }.forEach { jobs.remove(it)?.cancel() }
         mutablePages.value = mutablePages.value.filterKeys { it in window }
-        // Backward navigation can turn both occupied slots into speculative work.
-        // Keep a promoted current request intact; otherwise preempt the lowest-priority
-        // nearby request rather than making the new current wait for its download.
+        // Al retroceder, ambas cargas pueden ser especulativas. Conserva la actual si ya
+        // estaba en curso; en otro caso cancela la vecina de menor prioridad para no retrasarla.
         if (current in window && current !in jobs && current !in mutablePages.value && jobs.size >= 2) {
             window.lastOrNull { it in jobs && it != current }?.let { page ->
                 jobs.remove(page)?.cancel()
@@ -39,18 +41,20 @@ internal class ComicPageLoader<T : Any>(
         pump()
     }
 
+    /** Descarta el resultado de [page] y replanifica; ignora páginas fuera de ventana, en curso o posteriores al cierre. */
     fun retry(page: Int) {
         if (closed || page !in window || jobs.containsKey(page)) return
         mutablePages.value = mutablePages.value - page
         moveTo(window.first())
     }
 
+    /** Ocupa los huecos por prioridad, publica resultados o errores y propaga cancelaciones sin convertirlas en fallos. */
     private fun pump() {
         if (closed) return
         for (page in window) {
             if (jobs.size >= 2) break
             if (page in jobs || page in mutablePages.value) continue
-            // One speculative load leaves capacity for a newly selected current page.
+            // Una sola carga especulativa deja capacidad para una nueva página actual.
             if (page != window.first() && jobs.keys.any { it != window.first() }) continue
             val job = scope.launch(start = CoroutineStart.LAZY) {
                 try {
@@ -61,7 +65,7 @@ internal class ComicPageLoader<T : Any>(
                 } catch (error: Exception) {
                     if (page in window && !closed) mutablePages.value = mutablePages.value + (page to Page<T>(error = error))
                 } finally {
-                    // A removed/replaced job must not remove the replacement's slot.
+                    // Un trabajo retirado o sustituido no debe quitar el hueco de su sustituto.
                     if (jobs[page] == coroutineContext[Job]) {
                         jobs.remove(page)
                         pump()
@@ -73,6 +77,7 @@ internal class ComicPageLoader<T : Any>(
         }
     }
 
+    /** Cierra definitivamente la sesión, cancela sus trabajos y suelta resultados sin destruir los recursos que estos contengan. */
     fun close() {
         closed = true
         jobs.values.toList().forEach { it.cancel() }

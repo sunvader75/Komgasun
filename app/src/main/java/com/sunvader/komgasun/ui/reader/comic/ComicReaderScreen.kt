@@ -70,6 +70,12 @@ import com.sunvader.komgasun.ui.common.LoadingView
 import com.sunvader.komgasun.ui.common.ZoomableBox
 import kotlinx.coroutines.launch
 
+/**
+ * Compone la sesión de [bookId], su paginador con índices desde cero y controles con números desde uno.
+ * Comparte resultados decodificados entre vista y precarga; libera el planificador al salir y envía el último progreso.
+ * [onBack] solicita salir, también tras borrar con éxito el archivo remoto; el propietario gestiona la navegación.
+ * Desactiva el paso por gesto durante zoom o multitáctil y muestra diagnóstico hasta confirmar la imagen visible.
+ */
 @Composable
 fun ComicReaderScreen(
     bookId: String,
@@ -200,7 +206,7 @@ fun ComicReaderScreen(
                 DisposableEffect(loader) { onDispose { loader.close() } }
                 LaunchedEffect(loader, pagerState.currentPage) { loader.moveTo(pagerState.currentPage) }
                 val loadedPages by loader.pages.collectAsState()
-                // Only a successful visible composition hides diagnostics, not merely a prefetch.
+                // Solo una composición visible correcta oculta el diagnóstico, no una mera precarga.
                 var displayedPage by remember(loader) { mutableStateOf<Int?>(null) }
 
                 HorizontalPager(
@@ -238,7 +244,7 @@ fun ComicReaderScreen(
                                 } else CircularProgressIndicator(modifier = Modifier.size(36.dp))
                             }
                         } else SubcomposeAsyncImage(
-                            // Drawable result: Coil cannot issue another NETWORK request here.
+                            // Resultado drawable: Coil no puede emitir aquí otra solicitud de red.
                             model = loaded.value.drawable,
                             onSuccess = { if (pageIndex == pagerState.currentPage) displayedPage = pageIndex },
                             imageLoader = imageLoader,
@@ -291,7 +297,7 @@ fun ComicReaderScreen(
                     modifier = Modifier.align(Alignment.CenterEnd).fillMaxWidth(0.85f)
                 )
 
-                // Top Controls Overlay
+                // Controles superiores superpuestos
                 AnimatedVisibility(
                     visible = state.showControls,
                     enter = fadeIn(),
@@ -349,7 +355,7 @@ fun ComicReaderScreen(
                     }
                 }
 
-                // Bottom Scrubber Overlay
+                // Selector de página inferior superpuesto
                 AnimatedVisibility(
                     visible = state.showControls,
                     enter = fadeIn(),

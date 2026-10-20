@@ -57,6 +57,11 @@ class PdfReaderViewModel(
     private val bitmapCache = PdfPageCache<Bitmap>(32L * 1024 * 1024) { it.allocationByteCount.toLong() }
     private var lastSyncedPage: Int = -1
 
+    /**
+     * Recupera configuración y progreso de forma asíncrona; convierte páginas desde uno a índices desde cero.
+     * Los libros terminados se reabren al principio. Prefiere un PDF local no vacío; si no existe, pide páginas al servidor.
+     * El ajuste al límite superior se realiza al conocer las páginas del modo elegido.
+     */
     fun initReader() {
         _uiState.update { it.copy(isLoading = true, isReady = false, errorMessage = null) }
         viewModelScope.launch {
@@ -85,12 +90,14 @@ class PdfReaderViewModel(
         }
     }
 
+    /** Crea si es necesario el directorio de caché y devuelve la ruta del PDF del libro, sin crear el propio archivo. */
     private fun getLocalPdfFile(): File {
         val dir = File(getApplication<Application>().cacheDir, "pdf_books")
         dir.mkdirs()
         return File(dir, "$bookId.pdf")
     }
 
+    /** Carga páginas del servidor en viewModelScope, acota la posición inicial y publica disponibilidad o mensaje de error. */
     fun loadStreamPages() {
         _uiState.update { it.copy(isLoading = true, isReady = false, errorMessage = null, mode = PdfSourceMode.StreamFromKomga) }
         viewModelScope.launch {
@@ -119,6 +126,10 @@ class PdfReaderViewModel(
         }
     }
 
+    /**
+     * Descarga a la caché del libro publicando el progreso fraccionario recibido del repositorio.
+     * Al terminar abre el renderizador nativo; si falla, limpia el progreso y publica el error sin marcar el lector listo.
+     */
     fun downloadAndRenderLocally() {
         _uiState.update { it.copy(isLoading = true, downloadProgress = 0f, errorMessage = null) }
         viewModelScope.launch {
@@ -147,6 +158,11 @@ class PdfReaderViewModel(
         }
     }
 
+    /**
+     * Sustituye el renderizador bajo rendererLock y asume la propiedad del descriptor de [file], abierto en solo lectura.
+     * Publica el modo nativo y una posición acotada; convierte excepciones en error de interfaz.
+     * El cierre posterior libera los recursos retenidos, también si la apertura quedó incompleta.
+     */
     private fun setupNativeRenderer(file: File) = synchronized(rendererLock) {
         try {
             closeRenderer()
@@ -175,6 +191,11 @@ class PdfReaderViewModel(
         }
     }
 
+    /**
+     * Recibe un índice válido desde cero y total positivo; solo actúa si el lector está listo.
+     * Publica la posición y envía progreso desde uno sin esperar respuesta, deduplicando envíos consecutivos.
+     * La última página marca el libro terminado; no valida el índice recibido.
+     */
     fun onPageChanged(pageIndex: Int, totalPages: Int) {
         if (!_uiState.value.isReady) return
         _uiState.update { it.copy(currentPage = pageIndex, initialPage = pageIndex) }
@@ -186,6 +207,7 @@ class PdfReaderViewModel(
         repository.syncReadProgressAsync(bookId = bookId, page = pageNumber, completed = isCompleted)
     }
 
+    /** Envía de nuevo el progreso actual si está dentro del total del modo activo; no espera confirmación remota. */
     fun flushProgress() {
         val total = when (val mode = _uiState.value.mode) {
             is PdfSourceMode.NativeRenderer -> mode.totalPages
@@ -198,6 +220,7 @@ class PdfReaderViewModel(
         }
     }
 
+    /** Envía el progreso, libera recursos nativos y reinicia disponibilidad y deduplicación para la próxima apertura. */
     fun onReaderClosed() {
         flushProgress()
         closeRenderer()
@@ -210,11 +233,16 @@ class PdfReaderViewModel(
         lastSyncedPage = -1
     }
 
+    /**
+     * Retiene y renderiza la ventana de [current] (desde cero) solo en modo nativo, empezando por la actual.
+     * Conserva la generación inicial para rechazar trabajo obsoleto; comprueba cancelación entre renderizados
+     * serializados y espera 50 ms antes de cada vecina. La caché tiene un presupuesto de 32 MiB.
+     */
     suspend fun preloadPages(current: Int) {
         val generation = synchronized(rendererLock) { rendererGeneration }
         val total = (_uiState.value.mode as? PdfSourceMode.NativeRenderer)?.totalPages ?: return
         synchronized(rendererLock) { bitmapCache.retain(readerPageWindow(current, total)) }
-        // Render current first; cancellation is checked between each serialized render.
+        // Renderiza primero la actual; comprueba cancelación entre renderizados serializados.
         readerPageWindow(current, total).forEach { page ->
             currentCoroutineContext().ensureActive()
             if (page != current) delay(50)
@@ -222,9 +250,16 @@ class PdfReaderViewModel(
         }
     }
 
+    /**
+     * Obtiene o renderiza [pageIndex] (desde cero) en IO usando la generación actual.
+     * Devuelve null si no hay renderizador, el índice no existe o la generación caduca.
+     * El bitmap puede seguir en uso tras salir de la caché: el consumidor no debe reciclarlo.
+     * Las excepciones de renderizado y la cancelación se propagan.
+     */
     suspend fun renderPageBitmap(pageIndex: Int): Bitmap? =
         renderPageBitmap(pageIndex, synchronized(rendererLock) { rendererGeneration })
 
+    /** Serializa caché y renderizador con su cierre; cierra cada página y solo cachea resultados dentro de la ventana actual. */
     private suspend fun renderPageBitmap(pageIndex: Int, generation: Int): Bitmap? = withContext(Dispatchers.IO) {
         val coroutineContext = currentCoroutineContext()
         coroutineContext.ensureActive()
@@ -235,7 +270,7 @@ class PdfReaderViewModel(
             val renderer = pdfRenderer ?: return@synchronized null
             if (pageIndex !in 0 until renderer.pageCount) return@synchronized null
             renderer.openPage(pageIndex).use { page ->
-                // Bound even a single oversized page to about 16 MiB (ARGB).
+                // Limita incluso una página sobredimensionada a unos 16 MiB (ARGB), con escala máxima 1,5.
                 val scale = minOf(1.5, kotlin.math.sqrt(4_000_000.0 / (page.width.toDouble() * page.height)))
                 val bitmap = Bitmap.createBitmap(
                     (page.width * scale).toInt().coerceAtLeast(1),
@@ -254,6 +289,7 @@ class PdfReaderViewModel(
         _uiState.update { it.copy(showControls = !it.showControls) }
     }
 
+    /** Invalida trabajos anteriores, suelta la caché sin reciclar bitmaps y cierra renderizador y descriptor bajo el mismo bloqueo; tolera errores de cierre. */
     private fun closeRenderer() = synchronized(rendererLock) {
         rendererGeneration++
         bitmapCache.clear()
@@ -268,6 +304,7 @@ class PdfReaderViewModel(
         closeRenderer()
     }
 
+    /** Borra el archivo remoto de forma asíncrona y entrega el Result a [onDone] en viewModelScope; no elimina aquí la copia local. */
     fun deleteBookFile(onDone: (Result<Unit>) -> Unit) {
         viewModelScope.launch {
             val result = repository.deleteBookFile(bookId)

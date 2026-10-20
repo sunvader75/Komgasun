@@ -73,6 +73,12 @@ import com.sunvader.komgasun.ui.common.LoadingView
 import com.sunvader.komgasun.ui.common.ZoomableBox
 import kotlinx.coroutines.launch
 
+/**
+ * Compone el lector de [bookId] con páginas del servidor o bitmaps nativos y ofrece la descarga para cambiar de modo.
+ * El paginador usa índices desde cero y los controles números desde uno; el zoom y multitáctil bloquean el paso por gesto.
+ * Al salir envía el progreso y cierra los recursos del ViewModel. [onBack] delega la navegación al propietario,
+ * tanto al pulsar volver como tras borrar con éxito el archivo remoto.
+ */
 @Composable
 fun PdfReaderScreen(
     bookId: String,
@@ -340,7 +346,7 @@ fun PdfReaderScreen(
                         }
                     }
 
-                    // Top Bar Overlay
+                    // Barra superior superpuesta
                     AnimatedVisibility(
                         visible = state.showControls,
                         enter = fadeIn(),
@@ -411,7 +417,7 @@ fun PdfReaderScreen(
                         }
                     }
 
-                    // Bottom Bar Scrubber Overlay
+                    // Selector de página inferior superpuesto
                     AnimatedVisibility(
                         visible = state.showControls,
                         enter = fadeIn(),

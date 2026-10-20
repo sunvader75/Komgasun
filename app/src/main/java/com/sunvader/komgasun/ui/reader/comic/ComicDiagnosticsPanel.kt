@@ -16,17 +16,22 @@ import androidx.compose.ui.unit.dp
 import com.sunvader.komgasun.ui.reader.ReaderDiagnostics
 import kotlinx.coroutines.delay
 
+/**
+ * Ofrece diagnóstico tras 1500 ms sin mostrar [page] (número desde uno); el éxito visible oculta y reinicia el panel.
+ * [memory] proporciona uso y límite global en bytes, opcionalmente desconocidos, al refrescar o copiar.
+ * Los eventos actualizan la instantánea; no hay sondeo periódico. Copiar escribe el informe en el portapapeles.
+ */
 @Composable
 fun ComicDiagnosticsPanel(diagnostics: ReaderDiagnostics, page: Int, memory: () -> Pair<Long?, Long?>, modifier: Modifier = Modifier, pageDisplayed: Boolean = false) {
     var delayElapsed by remember(page, pageDisplayed) { mutableStateOf(false) }
-    // Keep the effect in composition even on success so it cancels the pending delay.
+    // Conserva el efecto incluso tras el éxito para cancelar la espera pendiente.
     LaunchedEffect(page, pageDisplayed) {
         if (!pageDisplayed) {
             delay(1500)
             delayElapsed = true
         }
     }
-    // Compose no Surface at all during short loads; success also discards UI state.
+    // No compone Surface durante cargas breves; el éxito también descarta el estado de interfaz.
     if (pageDisplayed || !delayElapsed) return
     var expanded by remember(page) { mutableStateOf(false) }
     var copied by remember(page) { mutableStateOf(false) }
@@ -38,7 +43,7 @@ fun ComicDiagnosticsPanel(diagnostics: ReaderDiagnostics, page: Int, memory: () 
                 Text(if (expanded) "Ocultar diagnóstico" else "Diagnóstico")
             }
             if (expanded) {
-                // Snapshot refreshed by events or explicit refresh; no background polling.
+                // Instantánea renovada por eventos o actualización explícita; sin sondeo en segundo plano.
                 var refresh by remember { mutableIntStateOf(0) }
                 val report = remember(events, page, refresh) {
                     val (used, limit) = memory()

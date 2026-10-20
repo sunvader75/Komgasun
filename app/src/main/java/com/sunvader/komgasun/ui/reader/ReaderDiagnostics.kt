@@ -4,7 +4,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.net.SocketTimeoutException
 
-/** Session-only, bounded and thread safe. Never accepts URLs, titles or exception messages. */
+/** Registro de sesión acotado y seguro entre hilos; capacidad positiva y reloj en ms. No admite URLs, títulos ni mensajes de excepción. */
 class ReaderDiagnostics(private val capacity: Int = 64, private val clock: () -> Long = { System.nanoTime() / 1_000_000 }) {
     enum class Kind { VISIBLE, PRELOAD }
     enum class Status { LOADING, SUCCESS, ERROR, CANCELLED }
@@ -19,12 +19,14 @@ class ReaderDiagnostics(private val capacity: Int = 64, private val clock: () ->
     val events = mutableEvents.asStateFlow()
     init { require(capacity > 0) }
 
+    /** Añade una carga de página numerada desde uno, descarta los eventos más antiguos y devuelve su identificador único en la sesión. */
     @Synchronized fun start(page: Int, kind: Kind): Long {
         val event = Event(++sequence, page, kind, clock())
         mutableEvents.value = (mutableEvents.value + event).takeLast(capacity)
         return event.id
     }
 
+    /** Finaliza solo un evento aún en carga; ignora identificadores expulsados o ya finalizados y calcula duración no negativa en ms. */
     @Synchronized fun finish(id: Long, status: Status, source: Source = Source.UNKNOWN, failure: Failure? = null) {
         mutableEvents.value = mutableEvents.value.map {
             if (it.id == id && it.status == Status.LOADING) it.copy(status = status,
@@ -32,15 +34,18 @@ class ReaderDiagnostics(private val capacity: Int = 64, private val clock: () ->
         }
     }
 
+    /** Finaliza con error clasificado sin conservar el mensaje ni la excepción recibida. */
     fun fail(id: Long, error: Throwable) = finish(id, Status.ERROR, failure = when (error) {
         is SocketTimeoutException -> Failure.TIMEOUT
         is java.io.IOException -> Failure.NETWORK
         else -> Failure.OTHER
     })
 
+    /** Devuelve una instantánea textual para [page] (desde uno); las medidas opcionales de memoria global de Coil se expresan en bytes. */
     fun report(page: Int, memoryBytes: Long?, memoryLimitBytes: Long?): String {
         val snapshot = events.value
         val now = clock()
+        /** Formatea tiempos relativos al inicio de sesión, incluida la espera de cargas pendientes. */
         fun Event.line(): String {
             val start = (startedMs - sessionStartedMs).coerceAtLeast(0)
             val end = elapsedMs?.let { "${start + it}ms" } ?: "pendiente"
@@ -59,7 +64,7 @@ class ReaderDiagnostics(private val capacity: Int = 64, private val clock: () ->
     }
 }
 
-/** A new listener per request; only sanitized enums enter the diagnostic store. */
+/** Crea un listener por solicitud para [page] (desde uno); solo guarda categorías saneadas, nunca datos de la solicitud. */
 fun ReaderDiagnostics.requestListener(page: Int, kind: ReaderDiagnostics.Kind): coil.request.ImageRequest.Listener =
     object : coil.request.ImageRequest.Listener {
         private var id: Long? = null

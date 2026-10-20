@@ -1,6 +1,9 @@
 package com.sunvader.komgasun.ui.reader
 
-/** Current page first, then up to three ahead and one behind. Indices are zero-based. */
+/**
+ * Devuelve [current], hasta tres páginas posteriores y una anterior, en ese orden y con índices desde cero.
+ * Excluye posiciones fuera de [total]; si la actual no existe, devuelve una lista vacía.
+ */
 fun readerPageWindow(current: Int, total: Int): List<Int> {
     if (current !in 0 until total) return emptyList()
     return (listOf(current) + (1..3).map { current + it } + listOf(current - 1))
@@ -9,6 +12,7 @@ fun readerPageWindow(current: Int, total: Int): List<Int> {
 
 enum class ReaderLoadStatus { ERROR, LOADING, READY }
 
+/** Da prioridad al error; sin error, solo considera listo un lector preparado y que no está cargando. */
 fun readerLoadStatus(loading: Boolean, ready: Boolean, error: String?): ReaderLoadStatus = when {
     error != null -> ReaderLoadStatus.ERROR
     loading || !ready -> ReaderLoadStatus.LOADING

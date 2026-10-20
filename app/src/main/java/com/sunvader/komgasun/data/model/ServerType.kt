@@ -8,7 +8,6 @@ enum class ServerType(val label: String) {
     REMOTE("Tailscale (Remoto)");
 
     companion object {
-        /** Resuelve el nombre sin distinguir mayúsculas; devuelve LOCAL si es nulo o desconocido. */
         fun fromName(name: String?): ServerType {
             return entries.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: LOCAL
         }

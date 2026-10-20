@@ -1,28 +1,24 @@
 package com.sunvader.komgasun.data.repository
 
 import com.sunvader.komgasun.data.local.PreferencesManager
+import com.sunvader.komgasun.data.model.BookDto
+import com.sunvader.komgasun.data.model.BookPageDto
 import com.sunvader.komgasun.data.model.BookType
 import com.sunvader.komgasun.data.model.EpubCoverProgress
+import com.sunvader.komgasun.data.model.LibraryDto
+import com.sunvader.komgasun.data.model.ReadProgressDto
+import com.sunvader.komgasun.data.model.SeriesDto
+import com.sunvader.komgasun.data.model.ServerConfig
+import com.sunvader.komgasun.data.model.ServerType
+import com.sunvader.komgasun.data.model.UserDto
 import com.sunvader.komgasun.data.model.detectBookType
+import com.sunvader.komgasun.data.remote.KomgaApiClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.Dispatchers.IO
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
-import com.sunvader.komgasun.data.model.BookDto
-import com.sunvader.komgasun.data.model.BookPageDto
-import com.sunvader.komgasun.data.model.LibraryDto
-import com.sunvader.komgasun.data.model.SeriesDto
-import com.sunvader.komgasun.data.model.ServerConfig
-import com.sunvader.komgasun.data.model.UserDto
-import com.sunvader.komgasun.data.remote.KomgaApiClient
-import com.sunvader.komgasun.data.model.ReadProgressDto
-import com.sunvader.komgasun.data.model.ServerType
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +26,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 
@@ -38,7 +37,7 @@ class KomgaRepository(
     val apiClient: KomgaApiClient = KomgaApiClient()
 ) {
 
-    private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val repoScope = CoroutineScope(SupervisorJob() + IO)
     private val _recentProgress = MutableStateFlow<Map<String, ReadProgressDto>>(emptyMap())
     val recentProgress: StateFlow<Map<String, ReadProgressDto>> = _recentProgress.asStateFlow()
 
@@ -247,21 +246,21 @@ class KomgaRepository(
         return apiClient.emptyTrash(config, libraryId)
     }
 
-    /** Devuelve la URL de miniatura sin autenticar, o una cadena vacía si no hay sesión. */
-    suspend fun getSeriesThumbnailUrl(seriesId: String): String {
-        val config = getActiveConfig() ?: return ""
-        return KomgaApiClient.getSeriesThumbnailUrl(config.serverUrl, seriesId)
-    }
-
-    /** Devuelve la URL de portada sin autenticar, o una cadena vacía si no hay sesión. */
-    suspend fun getBookThumbnailUrl(bookId: String): String {
-        val config = getActiveConfig() ?: return ""
-        return KomgaApiClient.getBookThumbnailUrl(config.serverUrl, bookId)
-    }
-
-    /** Devuelve la URL de imagen con la numeración del servidor sin validarla, o una cadena vacía sin sesión. */
-    suspend fun getPageImageUrl(bookId: String, pageNumber: Int): String {
-        val config = getActiveConfig() ?: return ""
-        return KomgaApiClient.getPageImageUrl(config.serverUrl, bookId, pageNumber)
-    }
+//    /** Devuelve la URL de miniatura sin autenticar, o una cadena vacía si no hay sesión. */
+//    suspend fun getSeriesThumbnailUrl(seriesId: String): String {
+//        val config = getActiveConfig() ?: return ""
+//        return KomgaApiClient.getSeriesThumbnailUrl(config.serverUrl, seriesId)
+//    }
+//
+//    /** Devuelve la URL de portada sin autenticar, o una cadena vacía si no hay sesión. */
+//    suspend fun getBookThumbnailUrl(bookId: String): String {
+//        val config = getActiveConfig() ?: return ""
+//        return KomgaApiClient.getBookThumbnailUrl(config.serverUrl, bookId)
+//    }
+//
+//    /** Devuelve la URL de imagen con la numeración del servidor sin validarla, o una cadena vacía sin sesión. */
+//    suspend fun getPageImageUrl(bookId: String, pageNumber: Int): String {
+//        val config = getActiveConfig() ?: return ""
+//        return KomgaApiClient.getPageImageUrl(config.serverUrl, bookId, pageNumber)
+//    }
 }

@@ -10,7 +10,6 @@ import com.sunvader.komgasun.data.model.UserDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.Credentials
 import okhttp3.MediaType.Companion.toMediaType
@@ -99,9 +98,7 @@ class KomgaApiClient(
                 okHttpClient.newCall(request).execute().use { response ->
                     when (response.code) {
                         200 -> {
-                            val body = response.body?.string() ?: return@withContext Result.failure(
-                                IOException("Respuesta vacía del servidor")
-                            )
+                            val body = response.body.string()
                             val user = json.decodeFromString<UserDto>(body)
                             return@withContext Result.success(user)
                         }
@@ -126,7 +123,7 @@ class KomgaApiClient(
                     200 -> Result.success(UserDto(id = "me", email = config.username))
                     401 -> Result.failure(IOException("Credenciales inválidas (401)"))
                     403 -> Result.failure(IOException("Acceso denegado (403)"))
-                    404 -> Result.failure(IOException("Servidor o ruta no encontrada (404). Verificá la URL ingresada."))
+                    404 -> Result.failure(IOException("Servidor o ruta no encontrada (404). Verifica la URL ingresada."))
                     else -> Result.failure(IOException("Error del servidor: HTTP ${response.code}"))
                 }
             }
@@ -145,7 +142,7 @@ class KomgaApiClient(
                 if (!response.isSuccessful) {
                     return@withContext Result.failure(IOException("HTTP ${response.code}: ${response.message}"))
                 }
-                val body = response.body?.string().orEmpty()
+                val body = response.body.string()
                 val libraries = json.decodeFromString<List<LibraryDto>>(body)
                 Result.success(libraries)
             }
@@ -165,7 +162,7 @@ class KomgaApiClient(
                 if (!response.isSuccessful) {
                     return@withContext Result.failure(IOException("HTTP ${response.code}: ${response.message}"))
                 }
-                val body = response.body?.string().orEmpty()
+                val body = response.body.string()
                 val page = json.decodeFromString<PageResponseDto<SeriesDto>>(body)
                 Result.success(page.content)
             }
@@ -185,7 +182,7 @@ class KomgaApiClient(
                 if (!response.isSuccessful) {
                     return@withContext Result.failure(IOException("HTTP ${response.code}: ${response.message}"))
                 }
-                val body = response.body?.string().orEmpty()
+                val body = response.body.string()
                 val page = json.decodeFromString<PageResponseDto<BookDto>>(body)
                 Result.success(page.content)
             }
@@ -210,7 +207,7 @@ class KomgaApiClient(
                     if (!response.isSuccessful) {
                         return@withContext Result.failure(IOException("HTTP ${response.code}: ${response.message}"))
                     }
-                    json.decodeFromString<PageResponseDto<BookDto>>(response.body?.string().orEmpty())
+                    json.decodeFromString<PageResponseDto<BookDto>>(response.body.string())
                 }
                 books.addAll(page.content)
                 pageNumber++
@@ -234,7 +231,7 @@ class KomgaApiClient(
                 if (!response.isSuccessful) {
                     return@withContext Result.failure(IOException("HTTP ${response.code}: ${response.message}"))
                 }
-                val body = response.body?.string().orEmpty()
+                val body = response.body.string()
                 val book = json.decodeFromString<BookDto>(body)
                 Result.success(book)
             }
@@ -253,7 +250,7 @@ class KomgaApiClient(
         try {
             okHttpClient.newCall(buildRequest(url, config)).execute().use { response ->
                 if (response.code != 200) return@withContext Result.failure(IOException("HTTP ${response.code}: ${response.message}"))
-                val body = response.body ?: throw IOException("Empty EPUB positions response")
+                val body = response.body
                 val limit = 16 * 1024 * 1024
                 require(body.contentLength() <= limit) { "EPUB positions response too large" }
                 val bytes = java.io.ByteArrayOutputStream()
@@ -284,7 +281,9 @@ class KomgaApiClient(
             okHttpClient.newCall(buildRequest(url, config)).execute().use { response ->
                 when (response.code) {
                     204 -> Result.success(null)
-                    200 -> Result.success(json.decodeFromString<com.sunvader.komgasun.data.model.EpubProgressionDto>(response.body?.string().orEmpty()))
+                    200 -> Result.success(json.decodeFromString<com.sunvader.komgasun.data.model.EpubProgressionDto>(
+                        response.body.string()
+                    ))
                     else -> Result.failure(IOException("HTTP ${response.code}: ${response.message}"))
                 }
             }
@@ -306,7 +305,7 @@ class KomgaApiClient(
             okHttpClient.newCall(request).execute().use { response ->
                 if (response.code == 204) Result.success(Unit)
                 else {
-                    val errorBody = response.body?.string().orEmpty()
+                    val errorBody = response.body.string()
                     val message = if (errorBody.isBlank()) "HTTP ${response.code}: ${response.message}"
                     else "HTTP ${response.code}: ${response.message} - $errorBody"
                     Result.failure(IOException(message))
@@ -342,7 +341,7 @@ class KomgaApiClient(
         try {
             okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    val errorBody = response.body?.string().orEmpty()
+                    val errorBody = response.body.string()
                     android.util.Log.e("KomgaApiClient", "PATCH read-progress HTTP ${response.code}: $errorBody")
                     return@withContext Result.failure(IOException("HTTP ${response.code}: ${response.message} - $errorBody"))
                 }
@@ -392,7 +391,7 @@ class KomgaApiClient(
                 if (!response.isSuccessful) {
                     return@withContext Result.failure(IOException("HTTP ${response.code}: ${response.message}"))
                 }
-                val body = response.body?.string().orEmpty()
+                val body = response.body.string()
                 val pages = json.decodeFromString<List<BookPageDto>>(body)
                 Result.success(pages)
             }
@@ -423,7 +422,7 @@ class KomgaApiClient(
                 if (!response.isSuccessful) {
                     return@withContext Result.failure(IOException("HTTP ${response.code}: ${response.message}"))
                 }
-                val body = response.body ?: return@withContext Result.failure(IOException("Empty body"))
+                val body = response.body
                 val totalLength = body.contentLength()
 
                 destinationFile.parentFile?.mkdirs()
@@ -468,7 +467,7 @@ class KomgaApiClient(
         try {
             okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    val errorBody = response.body?.string().orEmpty()
+                    val errorBody = response.body.string()
                     return@withContext Result.failure(IOException("HTTP ${response.code}: ${response.message} - $errorBody"))
                 }
                 Result.success(Unit)
@@ -487,7 +486,7 @@ class KomgaApiClient(
         try {
             okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    val errorBody = response.body?.string().orEmpty()
+                    val errorBody = response.body.string()
                     return@withContext Result.failure(IOException("HTTP ${response.code}: ${response.message} - $errorBody"))
                 }
                 Result.success(Unit)
@@ -506,7 +505,7 @@ class KomgaApiClient(
         try {
             okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
-                    val errorBody = response.body?.string().orEmpty()
+                    val errorBody = response.body.string()
                     return@withContext Result.failure(IOException("HTTP ${response.code}: ${response.message} - $errorBody"))
                 }
                 Result.success(Unit)

@@ -8,7 +8,6 @@ enum class ItemFilter(val label: String) {
     UNAVAILABLE("No disponible");
 
     companion object {
-        /** Resuelve el nombre sin distinguir mayúsculas; devuelve ALL si es nulo o desconocido. */
         fun fromName(name: String?): ItemFilter {
             return entries.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: ALL
         }
@@ -22,7 +21,7 @@ fun SeriesDto.matchesFilter(filter: ItemFilter): Boolean {
         ItemFilter.ALL -> true
         ItemFilter.UNAVAILABLE -> isUnavailable
         ItemFilter.UNREAD -> !isUnavailable && (booksReadCount == 0 && booksInProgressCount == 0 && booksCount > 0)
-        ItemFilter.IN_PROGRESS -> !isUnavailable && (booksInProgressCount > 0 || (booksReadCount > 0 && booksReadCount < booksCount))
+        ItemFilter.IN_PROGRESS -> !isUnavailable && (booksInProgressCount > 0 || (booksReadCount in 1..<booksCount))
         ItemFilter.READ -> !isUnavailable && (booksReadCount == booksCount && booksCount > 0)
     }
 }
@@ -54,21 +53,18 @@ fun LibraryDto.matchesFilter(filter: ItemFilter): Boolean {
 /** Acepta si coincide algún filtro distinto de ALL, o siempre si no queda ninguno. */
 fun SeriesDto.matchesFilters(filters: Set<ItemFilter>): Boolean {
     val active = filters.filter { it != ItemFilter.ALL }
-    if (active.isEmpty()) return true
-    return active.any { this.matchesFilter(it) }
+    return active.isEmpty() || active.any { this.matchesFilter(it) }
 }
 
 /** Acepta si coincide algún filtro distinto de ALL, o siempre si no queda ninguno. */
 fun BookDto.matchesFilters(filters: Set<ItemFilter>): Boolean {
     val active = filters.filter { it != ItemFilter.ALL }
-    if (active.isEmpty()) return true
-    return active.any { this.matchesFilter(it) }
+    return active.isEmpty() || active.any { this.matchesFilter(it) }
 }
 
 /** Acepta si coincide algún filtro distinto de ALL, o siempre si no queda ninguno. */
 fun LibraryDto.matchesFilters(filters: Set<ItemFilter>): Boolean {
     val active = filters.filter { it != ItemFilter.ALL }
-    if (active.isEmpty()) return true
-    return active.any { this.matchesFilter(it) }
+    return active.isEmpty() || active.any { this.matchesFilter(it) }
 }
 

@@ -2,8 +2,15 @@ package com.sunvader.komgasun.ui.reader.epub
 
 import java.net.URI
 
-/** ZIP names are decoded paths; references are URI-encoded and decoded exactly once. */
+/** Los nombres ZIP son rutas decodificadas; las referencias URI se decodifican una sola vez. */
 object EpubPath {
+    /**
+     * Resuelve una referencia respecto al directorio de [basePath], miembro ZIP ya decodificado.
+     * Ignora el fragmento y normaliza segmentos vacíos, `.` y `..`; una referencia sin ruta
+     * conserva la base. Rechaza esquemas, autoridad, consultas, rutas absolutas, barras inversas,
+     * caracteres de control, salidas de la raíz y resultados vacíos mediante IllegalArgumentException.
+     * No comprueba que el miembro exista ni que figure en el manifest.
+     */
     fun resolve(basePath: String, reference: String): String {
         val uri = try { URI(reference.replace(" ", "%20")) } catch (e: Exception) {
             throw IllegalArgumentException("Ruta EPUB inválida: $reference", e)

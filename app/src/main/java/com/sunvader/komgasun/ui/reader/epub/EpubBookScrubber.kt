@@ -16,6 +16,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 
+/**
+ * Muestra páginas globales base uno si hay mapa, o porcentaje y estado de cálculo si el total es null.
+ * Congela el mapa al empezar el arrastre para no cambiar su escala a mitad del gesto; al terminar
+ * llama a onSeek con página o a onSeekFraction sin mapa. No navega durante cada movimiento.
+ */
 @Composable
 internal fun EpubBookScrubber(
     pages: EpubBookPageMap?,

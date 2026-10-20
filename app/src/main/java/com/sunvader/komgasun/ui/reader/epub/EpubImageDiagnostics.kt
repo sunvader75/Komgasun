@@ -1,6 +1,6 @@
 package com.sunvader.komgasun.ui.reader.epub
 
-/** Only app-generated categories and numeric measurements cross into the shareable report. */
+/** Informe compartible: el llamador debe aportar transporte y recuperación generados por la app, no rutas ni errores sin filtrar. */
 data class EpubImageDiagnostics(
     val image: Int,
     val complete: Boolean,
@@ -15,7 +15,9 @@ data class EpubImageDiagnostics(
     val allowedCanonicalCount: Int = 0,
     val trustedBase: String = "UNKNOWN"
 ) {
+    /** Reduce categorías procedentes del documento al vocabulario permitido. */
     private fun safe(value: String, allowed: Set<String>) = value.takeIf { it in allowed } ?: "UNKNOWN"
+    /** Formatea medidas y estados; limita categorías de fuente y base y el recuento de recursos permitidos. */
     fun report() = "Imagen $image: complete=$complete natural=${width}x$height rect=${rectWidth}x$rectHeight\n" +
         "transporte=$transport recuperación=$recovery categoría=${if (complete && width == 0) "DECODE_OR_LOAD" else if (width > 0) "NONE" else "PENDING"}\n" +
         "fuente=${safe(sourceAttribute, setOf("MISSING_ATTR", "EMPTY_ATTR", "ATTR"))} selección=${safe(sourceSelection, setOf("CURRENT_SRC", "ATTR"))} permitidas=${allowedCanonicalCount.coerceIn(0, 10000)} base=${safe(trustedBase, setOf("APP_CHAPTER", "DOCUMENT_FALLBACK"))}\n"

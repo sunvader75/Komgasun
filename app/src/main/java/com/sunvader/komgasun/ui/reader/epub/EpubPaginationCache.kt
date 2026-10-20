@@ -3,8 +3,9 @@ package com.sunvader.komgasun.ui.reader.epub
 import java.io.File
 import java.security.MessageDigest
 
-/** Disposable derived data only. All calls run on IO, never during Compose layout. */
+/** Solo datos derivados prescindibles; el llamador ejecuta las operaciones en IO, no durante el layout de Compose. */
 internal class EpubPaginationCache(private val directory: File) {
+    /** Lee el formato versionado y exige un recuento válido por capítulo; cualquier fallo se convierte en null. */
     fun load(key: String, chapters: Int): EpubBookPageMap? = runCatching {
         require(key.matches(Regex("[a-f0-9]{64}")))
         val file = File(directory, key)
@@ -16,6 +17,11 @@ internal class EpubPaginationCache(private val directory: File) {
         EpubBookPageMap(counts)
     }.getOrNull()
 
+    /**
+     * Publica mediante fichero provisional y renombrado en el mismo directorio; limpia el provisional
+     * incluso si falla. Intenta eliminar claves salvo las 24 más recientes; no comprueba el resultado
+     * de los borrados. Los errores de escritura y renombrado se propagan.
+     */
     fun save(key: String, pages: EpubBookPageMap) {
         require(key.matches(Regex("[a-f0-9]{64}")))
         check(directory.isDirectory || directory.mkdirs())
@@ -29,8 +35,10 @@ internal class EpubPaginationCache(private val directory: File) {
     }
 
     companion object {
+        /** Incluye libro, dimensiones, tamaño de fuente y descriptor del motor en una clave SHA-256 versionada. */
         fun key(book: String, width: Int, height: Int, font: Int, renderer: String): String =
             hash("v1|$book|$width|$height|$font|$renderer")
+        /** Resume texto UTF-8 en hexadecimal SHA-256, apto como nombre sin segmentos de ruta. */
         fun hash(value: String): String = MessageDigest.getInstance("SHA-256")
             .digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
     }

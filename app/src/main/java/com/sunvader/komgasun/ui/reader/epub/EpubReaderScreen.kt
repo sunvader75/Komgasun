@@ -69,6 +69,12 @@ import com.sunvader.komgasun.ui.common.LoadingView
 import com.sunvader.komgasun.ui.reader.ReaderLoadStatus
 import com.sunvader.komgasun.ui.reader.readerLoadStatus
 
+/**
+ * Compone el lector y sus controles para [bookId]; inicia carga al entrar y cierra la sesión al salir.
+ * Mantiene un paginador invisible con las mismas dimensiones que el lector y libera ambas WebView
+ * al retirarlas. Sin mapa global muestra porcentaje, no un total ficticio; el índice navega por capítulos.
+ * [onBack] se ejecuta al pulsar volver o tras borrado remoto satisfactorio, no ante un fallo de borrado.
+ */
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun EpubReaderScreen(

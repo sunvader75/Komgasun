@@ -13,7 +13,7 @@ import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import kotlin.math.abs
 
-/** Read-only, deny-by-default archive transport; no native JavaScript interface is registered. */
+/** Transporte del archivo de solo lectura y denegación por defecto; no registra interfaz JavaScript nativa. */
 @SuppressLint("SetJavaScriptEnabled", "ViewConstructor")
 open class EpubWebView(context: Context) : WebView(context) {
     var onMove: (Int) -> Unit = {}
@@ -86,6 +86,11 @@ open class EpubWebView(context: Context) : WebView(context) {
             override fun shouldOverrideUrlLoading(view: WebView?, url: String?) = true
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest): WebResourceResponse =
                 resource(request.url, request.method, request.isForMainFrame)
+            /**
+             * Instala el capítulo de forma asíncrona solo en la shell esperada y aún vigente.
+             * Descarta respuestas de generaciones anteriores; mide al confirmar la instalación
+             * o notifica un documento no fiable si falla la validación.
+             */
             override fun onPageFinished(view: WebView?, url: String?) {
                 android.util.Log.d("EpubDebug", "onPageFinished: url=$url (shellUrl=$shellUrl)")
                 if (disposed) return
@@ -115,6 +120,7 @@ open class EpubWebView(context: Context) : WebView(context) {
                 android.util.Log.e("EpubDebug", "onReceivedError: uri=${request?.url}, error=${error?.description}")
                 if (request?.isForMainFrame == true && request.url.toString() == shellUrl) documentError()
             }
+            /** Invalida evaluaciones e imágenes pendientes e inicia el ciclo de la shell; rechaza otras URL. */
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 android.util.Log.d("EpubDebug", "onPageStarted: url=$url")
                 installed = false
@@ -127,6 +133,7 @@ open class EpubWebView(context: Context) : WebView(context) {
         post(poll)
     }
 
+    /** Invalida instalación y evaluaciones pendientes y comunica diagnóstico; no recarga automáticamente. */
     private fun documentError() {
         android.util.Log.e("EpubDebug", "documentError for shellUrl=$shellUrl")
         documents.begin(shellUrl)
@@ -137,9 +144,16 @@ open class EpubWebView(context: Context) : WebView(context) {
         onImageDiagnostics("DOCUMENTO_NO_FIABLE: no se pudo abrir el documento local. Cierra y vuelve a abrir el capítulo; si persiste, comparte este diagnóstico.")
     }
 
+    /** Construye la URL de shell con segmentos codificados y generación para distinguir documentos. */
     private fun chapterUrl() = EpubHtml.ORIGIN + "/" + chapterPath.split('/').joinToString("/") { Uri.encode(it) } + "?generation=$token"
 
-    /** URLs must be exactly canonical, not just share a host suffix or decoded prefix. */
+    /**
+     * Atiende la intercepción de recursos, que puede ejecutarse fuera del hilo UI, sin acceso de red.
+     * Solo sirve GET: la shell principal debe coincidir exactamente con la solicitada por la app;
+     * los subrecursos deben ser URL canónicas del manifest y de un MIME permitido (CSS, ráster o fuente).
+     * Deniega HTML, SVG, JavaScript, binario genérico, consultas y fragmentos con respuesta 403 vacía.
+     * No basta compartir sufijo de host o prefijo decodificado; los errores también se deniegan.
+     */
     open fun resource(uri: Uri, method: String = "GET", mainFrame: Boolean = false): WebResourceResponse {
         val captured = token
         fun record(value: String) { if (captured == token && transports.size < 256) transports[uri.toString()] = value }
@@ -174,6 +188,11 @@ open class EpubWebView(context: Context) : WebView(context) {
     }
 
 
+    /**
+     * Aplica estado en el hilo UI. Un libro distinto o nueva generación carga otra shell e invalida
+     * diagnósticos, recuperación y callbacks previos; dentro del mismo capítulo solicita nueva medida.
+     * No actúa tras dispose ni si el capítulo no existe; limita fuente y fracción a rangos admitidos.
+     */
     fun render(state: EpubReaderUiState) {
         if (disposed) return
         val chapter = state.epubBook?.chapters?.getOrNull(state.currentChapterIndex) ?: return
@@ -202,6 +221,12 @@ open class EpubWebView(context: Context) : WebView(context) {
         } else measurePage()
     }
 
+    /**
+     * Ejecuta como máximo una medida pendiente en UI tras instalar el documento y tener dimensiones.
+     * Valida enteros, rangos, generación y configuración antes de notificar onMeasured; un estado más
+     * reciente provoca otra medida. onPaginationReady solo se invoca con recursos estabilizados.
+     * Las respuestas malformadas no se guardan como progreso.
+     */
     private fun measurePage() {
         if (!installed || disposed || paginationPaused || width == 0 || height == 0 || callbackPending) return
         callbackPending = true
@@ -244,6 +269,12 @@ open class EpubWebView(context: Context) : WebView(context) {
         }
     }
 
+    /**
+     * Inspecciona hasta 256 imágenes tras 1500 ms, sin autorizar lecturas desde datos arbitrarios del DOM.
+     * Reclama un intento por imagen y generación; valida origen, manifest, MIME, firma y presupuesto
+     * en el trabajador único antes de devolver el ráster al hilo UI. Descarta resultados antiguos.
+     * Asignar el recurso no confirma su decodificación; los informes distinguen ambos estados.
+     */
     private fun inspectImages() {
         if (!installed || disposed || imagePending) return
         imagePending = true
@@ -314,6 +345,7 @@ open class EpubWebView(context: Context) : WebView(context) {
         }
     }
 
+    /** Traduce deslizamientos horizontales y toques laterales a navegación; consume enlaces y arrastre vertical. */
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> { startX = event.x; startY = event.y }
@@ -338,6 +370,10 @@ open class EpubWebView(context: Context) : WebView(context) {
     }
     override fun performClick(): Boolean = super.performClick()
 
+    /**
+     * Libera en UI la WebView, cancela trabajador y sondeo y desconecta callbacks; no debe reutilizarse.
+     * Las comprobaciones de generación y disposed impiden aplicar resultados asíncronos ya en curso.
+     */
     fun dispose() {
         disposed = true
         imageWorker.shutdownNow()

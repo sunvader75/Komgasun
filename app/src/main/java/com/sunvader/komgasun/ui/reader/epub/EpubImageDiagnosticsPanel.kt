@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 
+/** No muestra nada sin informe; permite abrirlo y copiarlo íntegro al portapapeles sin cerrar el diálogo. */
 @Composable
 fun EpubImageDiagnosticsPanel(report: String) {
     var expanded by remember { mutableStateOf(false) }

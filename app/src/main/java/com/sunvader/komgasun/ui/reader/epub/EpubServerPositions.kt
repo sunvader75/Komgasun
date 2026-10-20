@@ -7,10 +7,11 @@ import java.net.URI
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** Never infer Komga's stored position set from the current ZIP's byte lengths. */
+/** No deduce las posiciones guardadas por Komga de los tamaños del ZIP actual. */
 class EpubServerPositions private constructor(
     private val chapters: List<List<EpubLocatorDto>>
 ) {
+    /** Elige por índice la posición publicada más cercana y conserva solo progression en locations; devuelve null si no es utilizable. */
     fun locator(chapter: Int, proportion: Double): EpubLocatorDto? {
         if (!proportion.isFinite() || proportion !in 0.0..1.0) return null
         val positions = chapters.getOrNull(chapter) ?: return null
@@ -20,6 +21,7 @@ class EpubServerPositions private constructor(
         return published.copy(locations = EpubLocationsDto(progression = published.locations!!.progression))
     }
 
+    /** Convierte la progresión a la fracción del índice publicado más cercano; capítulo sin posiciones da null. */
     fun proportion(chapter: Int, progression: Double): Double? {
         if (!progression.isFinite() || progression !in 0.0..1.0) return null
         val positions = chapters.getOrNull(chapter) ?: return null
@@ -29,6 +31,12 @@ class EpubServerPositions private constructor(
     }
 
     companion object {
+        /**
+         * Valida total (1..100 000), progresiones y tipos; asocia href por ruta literal, decodificada
+         * o sufijo compatible con los capítulos. Descarta rutas no asociadas, ordena y quita duplicados
+         * por progresión. Exige al menos un capítulo con posiciones, no cobertura completa del libro.
+         * Lanza IllegalArgumentException si la respuesta no cumple estos requisitos.
+         */
         fun create(paths: List<String>, response: EpubPositionsDto): EpubServerPositions {
             require(paths.isNotEmpty() && paths.none { it.isBlank() })
             require(response.total in 1..100_000 && response.total == response.positions.size)

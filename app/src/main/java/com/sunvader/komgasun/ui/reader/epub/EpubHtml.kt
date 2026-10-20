@@ -1,6 +1,6 @@
 package com.sunvader.komgasun.ui.reader.epub
 
-/** Publication markup is never interpolated into this trusted bootstrap document. */
+/** El marcado de la publicación nunca se interpola en el documento de arranque de confianza. */
 object EpubHtml {
     const val ORIGIN = "https://epub.invalid"
     val shell = """<!doctype html><html data-epub-shell="app"><head><meta charset="utf-8">
@@ -8,8 +8,15 @@ object EpubHtml {
         <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
         </head><body></body></html>""".trimIndent()
 
-    // DOMParser produces an inert tree. Active elements and attributes are removed before adoption.
-    // CSP is a second boundary, including for publication CSS URLs; no inline script is trusted.
+    /**
+     * Genera el script de instalación; los argumentos quoted deben ser expresiones JSON ya escapadas,
+     * no HTML ni URL sin citar. DOMParser crea un árbol inerte y se eliminan elementos y atributos
+     * activos antes de adoptarlo; la CSP añade una segunda barrera, también para las URL de CSS.
+     * Solo transforma SVG pasivo de una imagen ráster permitida; nunca adopta nodos SVG.
+     * Si se indica documento esperado, comprueba ubicación, base y marca de la shell en la misma
+     * evaluación. La API instalada es inmutable; una segunda instalación en ese documento es inocua.
+     * Devuelve código JavaScript, no lo ejecuta ni garantiza que las imágenes puedan decodificarse.
+     */
     fun install(quotedHtml: String, quotedRasterUrls: String = "[]", quotedChapterBase: String = "null", quotedDocumentUrl: String = "null"): String = """
         (function(){
           const expectedDocument=$quotedDocumentUrl;

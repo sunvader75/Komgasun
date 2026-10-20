@@ -7,13 +7,13 @@ open class EpubException(message: String, cause: Throwable? = null) : IllegalArg
 
 data class EpubResource(val path: String, val mediaType: String, val bytes: ByteArray)
 
-/** No extraction, open ZIP handles, or unbounded resource cache is retained. Keep the source file alive. */
+/** No extrae archivos ni retiene ZIP abiertos o una caché ilimitada; el propietario debe conservar el fichero fuente. */
 class EpubPublication internal constructor(
     private val file: File,
     val packagePath: String,
     val mediaTypes: Map<String, String>
 ) {
-    /** Called on Dispatchers.IO; includes styles, fonts and images, not just chapter text. */
+    /** Calcula SHA-256 de todo el fichero en IO: incluye estilos, fuentes e imágenes, no solo capítulos. */
     internal fun paginationFingerprint(): String {
         val digest = java.security.MessageDigest.getInstance("SHA-256")
         file.inputStream().buffered().use { input ->
@@ -27,9 +27,14 @@ class EpubPublication internal constructor(
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
+    /** Delega la resolución de referencias URI relativas en la validación de [EpubPath]. */
     fun resolve(basePath: String, reference: String): String = EpubPath.resolve(basePath, reference)
 
-    /** basePath is a decoded canonical ZIP member; reference is a relative URI (possibly fragmented). */
+    /**
+     * Lee un recurso relativo a un miembro ZIP canónico y decodificado; admite fragmentos en la referencia.
+     * Abre y cierra el ZIP en cada lectura, aplica el límite de entrada y usa MIME genérico si no está
+     * en el manifest. A diferencia de [readCanonicalResource], no exige pertenencia al manifest.
+     */
     fun readResource(basePath: String, reference: String): EpubResource {
         val path = resolve(basePath, reference)
         return withArchive(file) { zip ->
@@ -37,7 +42,11 @@ class EpubPublication internal constructor(
         }
     }
 
-    /** Pure JVM URI validation shared by WebView transport and raster recovery. */
+    /**
+     * Devuelve el miembro de una URL exactamente canónica de `https://epub.invalid`, presente en el
+     * manifest. Rechaza también variantes de codificación, consultas y fragmentos; lanza
+     * [EpubResourceFailure] con una categoría fija. Validación JVM compartida por transporte y recuperación.
+     */
     fun canonicalPath(source: String): String {
         fun reject(category: EpubResourceCategory): Nothing = throw EpubResourceFailure(category)
         if (source.isEmpty()) reject(EpubResourceCategory.EMPTY_SOURCE)
@@ -53,6 +62,11 @@ class EpubPublication internal constructor(
         return path
     }
 
+    /**
+     * Valida origen, forma canónica y manifest antes de leer hasta 8 MiB, sin conservar el ZIP abierto.
+     * Clasifica fichero ausente o ilegible y fallos de archivo, entrada o E/S mediante
+     * [EpubResourceFailure]; no devuelve los mensajes originales como diagnóstico de transporte.
+     */
     fun readCanonicalResource(source: String): EpubResource {
         val path = canonicalPath(source)
         if (!file.exists()) throw EpubResourceFailure(EpubResourceCategory.ARCHIVE_MISSING)
@@ -75,6 +89,11 @@ class EpubPublication internal constructor(
         const val MAX_PARSE_BYTES = 32 * 1024 * 1024
         const val MAX_ENTRIES = 10000
 
+        /**
+         * Abre el ZIP solo durante [block], tras rechazar nombres duplicados o más de 10 000 entradas.
+         * Cierra el archivo incluso si falla el bloque; conserva EpubException y envuelve otras excepciones.
+         * No extrae miembros ni valida aquí sus rutas o contenido.
+         */
         internal fun <T> withArchive(file: File, block: (ZipFile) -> T): T = try {
             ZipFile(file).use { zip ->
                 val names = HashSet<String>()
@@ -89,6 +108,11 @@ class EpubPublication internal constructor(
             throw EpubException("No se pudo leer el EPUB (ZIP inválido o contenido no compatible): ${e.message}", e)
         }
 
+        /**
+         * Lee un miembro existente, no directorio, con límite en bytes descomprimidos. Comprueba tanto
+         * el tamaño declarado como los bytes reales, incluso con tamaño ZIP desconocido; cierra el flujo,
+         * no el ZIP prestado. Lanza fallos categorizados si falta la entrada o rebasa [limit].
+         */
         internal fun readEntry(zip: ZipFile, path: String, limit: Int = MAX_ENTRY_BYTES): ByteArray {
             val entry = zip.getEntry(path) ?: throw EpubResourceFailure(EpubResourceCategory.ENTRY_MISSING, "Falta el recurso EPUB: $path")
             if (entry.isDirectory || entry.size > limit) throw EpubResourceFailure(EpubResourceCategory.ENTRY_LIMIT, "Recurso EPUB demasiado grande o inválido: $path (límite $limit bytes)")

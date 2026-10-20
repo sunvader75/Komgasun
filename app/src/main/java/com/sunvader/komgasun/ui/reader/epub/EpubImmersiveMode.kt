@@ -15,13 +15,17 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
+/** Recorre los ContextWrapper hasta encontrar Activity; devuelve null si no la hay. */
 private tailrec fun Context.readerActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.readerActivity()
     else -> null
 }
 
-/** Scoped to the EPUB reader: hides system bars during reading and reveals them with controls. */
+/**
+ * Oculta barras del sistema al leer y las muestra con los controles; reaplica el estado al reanudar.
+ * Restaura visibilidad y comportamiento capturados al retirar el efecto. Sin ventana no hace nada.
+ */
 @Composable
 internal fun EpubImmersiveMode(showControls: Boolean) {
     val activity = LocalContext.current.readerActivity()
@@ -36,6 +40,7 @@ internal fun EpubImmersiveMode(showControls: Boolean) {
         val navigationVisible = insets?.isVisible(WindowInsetsCompat.Type.navigationBars()) ?: true
         val previousBehavior = controller.systemBarsBehavior
 
+        /** Permite barras transitorias con gesto y aplica la visibilidad solicitada a ambas barras. */
         fun updateBars(show: Boolean) {
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             if (show) {

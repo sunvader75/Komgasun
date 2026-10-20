@@ -31,8 +31,16 @@ object EpubParser {
     private const val CONTAINER = "urn:oasis:names:tc:opendocument:xmlns:container"
     private const val DC = "http://purl.org/dc/elements/1.1/"
 
+    /**
+     * Lee container, OPF y capítulos en orden de spine sin extraer el ZIP. Limita cada lectura a
+     * 8 MiB y el análisis acumulado a 32 MiB; rechaza encryption.xml, manifest ambiguo y capítulos
+     * que no sean HTML/XHTML. Los errores se propagan: no devuelve libros parciales.
+     * El HTML se conserva sin sanear para su posterior instalación controlada en WebView.
+     * La publicación resultante necesita que el llamador mantenga disponible [epubFile].
+     */
     fun parse(epubFile: File): EpubBook = EpubPublication.withArchive(epubFile) { zip ->
         var remaining = EpubPublication.MAX_PARSE_BYTES
+        /** Descuenta los bytes leídos del presupuesto compartido de este análisis. */
         fun read(path: String): ByteArray {
             if (remaining <= 0) throw EpubException("EPUB supera el límite total de análisis de 32 MiB")
             return EpubPublication.readEntry(zip, path, minOf(remaining, EpubPublication.MAX_ENTRY_BYTES)).also { remaining -= it.size }
@@ -74,8 +82,10 @@ object EpubParser {
         )
     }
 
-    /** Chapters are opaque HTML, not package XML. Never parse their DTDs or resolve entities.
-     * This is only a display-label heuristic, not sanitization for the eventual WebView.
+    /**
+     * Busca title, h1 o h2 en los primeros 64 Ki caracteres y elimina etiquetas de la etiqueta visible.
+     * Devuelve null si no encuentra texto. Los capítulos son HTML opaco, no XML del paquete:
+     * nunca analiza sus DTD ni resuelve entidades. Es una heurística de título, no un saneamiento.
      */
     private fun extractChapterTitle(html: String): String? {
         // Bound heuristic work independently of the archive entry limit. Preserve full HTML below.
@@ -89,11 +99,16 @@ object EpubParser {
         return null
     }
 
+    /** Obtiene los elementos descendientes con el espacio de nombres y nombre indicados. */
     private fun Document.elements(namespace: String, name: String): List<Element> {
         val nodes = getElementsByTagNameNS(namespace, name)
         return (0 until nodes.length).map { nodes.item(it) as Element }
     }
 
+    /**
+     * Decodifica UTF-16 por BOM o patrón inicial, o UTF-8 según la cabecera (hasta 256 bytes).
+     * Rechaza otras codificaciones declaradas y secuencias no decodificables; elimina el BOM inicial.
+     */
     private fun decodeXml(bytes: ByteArray): String {
         val charset = when {
             bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() -> Charsets.UTF_16LE
@@ -110,8 +125,14 @@ object EpubParser {
         return charset.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString().removePrefix("\uFEFF")
     }
 
+    /** Decodifica antes de aplicar la barrera de seguridad XML, también para UTF-16. */
     private fun xml(bytes: ByteArray): Document = xml(decodeXml(bytes))
 
+    /**
+     * Analiza XML del paquete con espacios de nombres, sin admitir declaraciones DTD ni ENTITY.
+     * El resolver rechaza referencias externas; los fallos de sintaxis se propagan sin recuperación.
+     * Los conmutadores SAX son defensa adicional, no la barrera de seguridad en Android.
+     */
     private fun xml(text: String): Document {
         // Check after decoding so UTF-16 cannot bypass this boundary. No DTD (including internal subsets).
         if (Regex("<!\\s*(DOCTYPE|ENTITY)", RegexOption.IGNORE_CASE).containsMatchIn(text)) {

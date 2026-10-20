@@ -69,6 +69,13 @@ class EpubReaderViewModel(
         devicePreferences.edit().putString("id", it).apply()
     }
 
+    /**
+     * Reinicia la sesión del lector y carga caché o descarga en IO. Cancela y espera al cargador anterior
+     * para no solapar escritores; valida la descarga antes de sustituir la caché y comprueba la cuenta
+     * antes y después. Restaura el localizador más reciente utilizable sin convertir páginas en capítulos.
+     * Serializa acceso remoto con mutex y descarta generaciones antiguas. Si falla la consulta remota,
+     * permite lectura local sin crear cola de envíos; un cambio de sesión invalida el lector.
+     */
     fun initEpub() {
         val previous = loadJob
         previous?.cancel()
@@ -196,6 +203,7 @@ class EpubReaderViewModel(
         }
     }
 
+    /** Selecciona un índice base cero válido; invalida la medida y solicita inicio o final sin guardar aún. */
     fun selectChapter(index: Int, atEnd: Boolean = false) {
         val state = _uiState.value
         if (!state.isReady || index !in (state.epubBook?.chapters?.indices ?: IntRange.EMPTY)) return
@@ -205,6 +213,7 @@ class EpubReaderViewModel(
         // The server derives completion from the locator; never send a completed flag.
     }
 
+    /** Avanza o retrocede una página según el signo; cruza capítulos y no actúa sin paginación disponible. */
     fun movePage(direction: Int) {
         val state = _uiState.value
         if (!state.isReady || state.pageCount == 0) return
@@ -217,7 +226,10 @@ class EpubReaderViewModel(
         }
     }
 
-    /** Only the app's evaluateJavascript callback calls this; no publication/native bridge exists. */
+    /**
+     * Recibe medidas solo del callback evaluateJavascript de la app, sin puente publicación/nativo.
+     * Descarta generaciones antiguas y rangos inválidos; actualiza proporción, progreso y resumen de portada.
+     */
     fun onPageMeasured(token: Long, page: Int, count: Int) {
         val state = _uiState.value
         if (!state.isReady || token != state.chapterGeneration || count !in 1..100000 || page !in 0 until count) return
@@ -226,6 +238,7 @@ class EpubReaderViewModel(
         saveCoverSummary()
     }
 
+    /** Acepta un mapa completo con tantos capítulos como el libro, o null para volver al total desconocido. */
     internal fun onBookPageMap(pages: EpubBookPageMap?) {
         val state = _uiState.value
         if (!state.isReady) return
@@ -234,6 +247,10 @@ class EpubReaderViewModel(
         saveCoverSummary()
     }
 
+    /**
+     * Guarda progreso de portada para la sesión: usa páginas medidas si hay mapa; en otro caso reparte
+     * el peso por igual entre capítulos y guarda total null, no un total provisional inventado.
+     */
     private fun saveCoverSummary() {
         val state = _uiState.value
         val config = sessionConfig ?: return
@@ -249,6 +266,11 @@ class EpubReaderViewModel(
         repository.preferencesManager.epubCoverProgress.save(config, bookId, EpubCoverProgress(fraction, pages?.total))
     }
 
+    /**
+     * Registra solo cambios del lector con capítulo ya medido; evita duplicados y genera fecha creciente.
+     * Guarda primero el local y ofrece el localizador remoto a la cola, usando posiciones publicadas
+     * o aproximación por bytes. No espera al PUT ni garantiza su entrega; no envía un indicador completed.
+     */
     fun flushProgress() {
         val state = _uiState.value
         if (!state.isReady || state.pageCount == 0 || !positionChangedByReader) return
@@ -274,6 +296,7 @@ class EpubReaderViewModel(
         syncQueue?.offer(EpubProgressionDto(modified, EpubDeviceDto(deviceId, "Komgasun"), locator))
     }
 
+    /** Evita escrituras iguales; al añadir una clave limita a 256 localizadores con expulsión lexicográfica. */
     private fun saveLocal(key: String, locator: String) {
         if (preferences.getString(key, null) == locator) return
         val editor = preferences.edit()
@@ -282,6 +305,7 @@ class EpubReaderViewModel(
         editor.putString(key, locator).apply()
     }
 
+    /** Traduce el código HTTP reconocido a aviso de progreso solo local, sin iniciar reintentos. */
     private fun syncFailure(error: Throwable?): String {
         val message = error?.message.orEmpty()
         val code = Regex("HTTP (\\d{3})").find(message)?.groupValues?.get(1)
@@ -299,6 +323,10 @@ class EpubReaderViewModel(
         return "Progreso solo local: $reason. Vuelve a abrir el libro para reintentar."
     }
 
+    /**
+     * Guarda el cambio medido y resumen antes de invalidar la sesión y cancelar carga y cola.
+     * Cerrar la cola puede cancelar el envío recién ofrecido: este cierre no es una confirmación remota.
+     */
     fun onReaderClosed() {
         flushProgress()
         saveCoverSummary()
@@ -312,12 +340,15 @@ class EpubReaderViewModel(
         identity = null
         _uiState.update { it.copy(isReady = false, isLoading = true) }
     }
+    /** Alias histórico: avanza una página, no salta directamente de capítulo. */
     fun nextChapter() = movePage(1)
+    /** Alias histórico: retrocede una página, no salta directamente de capítulo. */
     fun previousChapter() = movePage(-1)
     fun nextPage() = movePage(1)
     fun previousPage() = movePage(-1)
     fun toggleControls() { _uiState.update { it.copy(showControls = !it.showControls) } }
     fun setControlsVisible(visible: Boolean) { _uiState.update { it.copy(showControls = visible) } }
+    /** Limita el destino base cero al capítulo medido y marca cambios para el siguiente guardado. */
     fun seekPage(targetPage: Int) {
         val state = _uiState.value
         if (!state.isReady || state.pageCount <= 0) return
@@ -327,6 +358,7 @@ class EpubReaderViewModel(
             _uiState.update { it.copy(page = clamped, proportion = EpubPagination.proportion(clamped, it.pageCount)) }
         }
     }
+    /** Salta a una página global base uno; al cambiar de capítulo restaura proporción e invalida la medida. */
     internal fun seekBookPage(page: Int, pages: EpubBookPageMap) {
         val state = _uiState.value
         if (!state.isReady || pages.counts.size != state.epubBook?.chapters?.size) return
@@ -340,6 +372,7 @@ class EpubReaderViewModel(
         }
     }
 
+    /** Navega por una fracción global con capítulos de igual peso, sin requerir un total de páginas. */
     fun seekBook(fraction: Float) {
         val state = _uiState.value
         val chapters = state.epubBook?.chapters?.size ?: 0
@@ -367,19 +400,24 @@ class EpubReaderViewModel(
             selectChapter(state.currentChapterIndex - 1)
         }
     }
+    /** Aumenta dos unidades hasta 32 e invalida la medida para repaginar manteniendo la proporción. */
     fun increaseFontSize() { _uiState.update { it.copy(fontSizeSp = (it.fontSizeSp + 2).coerceAtMost(32), pageCount = 0) } }
+    /** Reduce dos unidades hasta 12 e invalida la medida para repaginar manteniendo la proporción. */
     fun decreaseFontSize() { _uiState.update { it.copy(fontSizeSp = (it.fontSizeSp - 2).coerceAtLeast(12), pageCount = 0) } }
+    /** Persiste el modo tipográfico e invalida tanto el mapa global como la medida del capítulo. */
     fun setUseOriginalFonts(enabled: Boolean) {
         readerPreferences.edit().putBoolean("original_fonts", enabled).apply()
         bookPages = null
         _uiState.update { it.copy(useOriginalFonts = enabled, pageCount = 0) }
     }
 
+    /** Alterna y persiste el tema del lector sin invalidar la paginación ni cambiar la posición. */
     fun toggleTheme() {
         val isDarkTheme = !_uiState.value.isDarkTheme
         readerPreferences.edit().putBoolean("dark_theme", isDarkTheme).apply()
         _uiState.update { it.copy(isDarkTheme = isDarkTheme) }
     }
+    /** Solicita borrar el fichero remoto; entrega el resultado en viewModelScope, sin cerrar por sí solo la pantalla. */
     fun deleteBookFile(onDone: (Result<Unit>) -> Unit) {
         viewModelScope.launch { onDone(repository.deleteBookFile(bookId)) }
     }

@@ -28,6 +28,12 @@ class EpubWebViewTest {
     @Test fun paginatedResourcesSecurityAndReflow() = exerciseReader(false)
     @Test fun rejectedNormalRasterRecoversWithoutNetwork() = exerciseReader(true)
 
+    /**
+     * Monta un lector con un EPUB temporal para comprobar navegación, redistribución y aislamiento.
+     * [induceFailure] fuerza un HTTP 403 para la imagen PNG y comprueba su recuperación mediante
+     * URL Blob; si es falso comprueba la carga normal. El archivo se elimina al terminar y la
+     * vista se libera mediante onRelease al retirarse de la composición.
+     */
     private fun exerciseReader(induceFailure: Boolean) {
         val file = File.createTempFile("epub-webview-", ".epub")
         try {
@@ -227,6 +233,11 @@ class EpubWebViewTest {
         assertEquals(path, pub.canonicalPath(source))
     }
 
+    /**
+     * Evalúa [script] en el hilo de interfaz y espera hasta cinco segundos a su respuesta.
+     * Devuelve el texto JSON de evaluateJavascript, sin deserializarlo; la espera falla si
+     * no llega la respuesta. Debe llamarse fuera del hilo de interfaz para poder esperar.
+     */
     private fun js(view: EpubWebView, script: String): String {
         val result = AtomicReference<String?>()
         compose.runOnIdle { view.evaluateJavascript(script) { result.set(it) } }

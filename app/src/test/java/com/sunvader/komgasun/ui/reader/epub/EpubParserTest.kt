@@ -6,15 +6,17 @@ import java.nio.file.Files
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-/** Models Android's unsupported SAX feature switches without changing the actual DOM parser. */
+/** Simula un proveedor Android que rechaza opciones SAX, conservando el analizador DOM delegado. */
 class RestrictedXmlFactory : javax.xml.parsers.DocumentBuilderFactory() {
     companion object { lateinit var delegateProvider: String }
     private val delegate = javax.xml.parsers.DocumentBuilderFactory.newInstance(delegateProvider, javaClass.classLoader)
+    /** Crea el analizador delegado con las opciones actuales de espacios de nombres y entidades. */
     override fun newDocumentBuilder(): javax.xml.parsers.DocumentBuilder {
         delegate.isNamespaceAware = isNamespaceAware
         delegate.isExpandEntityReferences = isExpandEntityReferences
         return delegate.newDocumentBuilder()
     }
+    /** Rechaza cualquier opción para reproducir un proveedor que no admite estos ajustes. */
     override fun setFeature(name: String, value: Boolean) {
         throw javax.xml.parsers.ParserConfigurationException("Unsupported feature: $name")
     }
@@ -24,6 +26,13 @@ class RestrictedXmlFactory : javax.xml.parsers.DocumentBuilderFactory() {
 }
 
 class EpubParserTest {
+    /**
+     * Crea un EPUB temporal y lo entrega a [block]; elimina el archivo incluso si falla la prueba.
+     * [href] es la referencia del manifiesto y [member] la entrada ZIP real, que pueden diferir
+     * para probar rutas inválidas. [prefix] añade un prefijo XML y [utf16] cambia la codificación
+     * de los documentos generados. [extra] sustituye entradas con el mismo nombre; [spineCount]
+     * repite la referencia al mismo capítulo, sin crear recursos adicionales.
+     */
     private fun fixture(opfPath: String = "book.opf", href: String = "chapter.xhtml",
                         member: String = "chapter.xhtml", prefix: String = "", utf16: Boolean = false,
                         chapter: String = "<html><head><title>Capítulo á</title></head><body><img src='cover.png'/></body></html>",

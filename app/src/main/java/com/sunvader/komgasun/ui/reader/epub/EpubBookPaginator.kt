@@ -5,7 +5,7 @@ import android.webkit.WebView
 import kotlinx.coroutines.*
 import java.io.File
 
-/** One attached renderer; derived counts are reused across reader openings and color themes. */
+/** Un renderizador adjunto, gestionado en el hilo principal; reutiliza recuentos entre aperturas y temas de color. */
 internal class EpubBookPaginator(
     context: Context,
     cacheDirectory: File = File(context.filesDir, "epub_pagination")
@@ -56,6 +56,11 @@ internal class EpubBookPaginator(
         }
     }
 
+    /**
+     * Solicita paginación para libro, fuente y modo tipográfico; el color no invalida el cálculo.
+     * Requiere dimensiones positivas para empezar. Los callbacks del hilo principal comunican
+     * progreso y un mapa completo, o null mientras se calcula y null con fallo si no puede completarse.
+     */
     @Suppress("UNUSED_PARAMETER")
     fun paginate(book: EpubBook, font: Int, dark: Boolean, useOriginalFonts: Boolean = false) {
         // Color does not change pagination. Measure in a fixed theme, including mid-calculation.
@@ -72,6 +77,11 @@ internal class EpubBookPaginator(
         if (!closed && (w != oldw || h != oldh)) restart()
     }
 
+    /**
+     * Invalida callbacks anteriores y el mapa visible; busca la caché en IO antes de medir capítulos.
+     * La clave incluye bytes del libro, viewport, densidad, motor, shell y modo de fuentes, no el tema.
+     * No publica resultados de una generación abandonada aunque termine una lectura de caché antigua.
+     */
     private fun restart() {
         removeCallbacks(timeout)
         cacheJob?.cancel()
@@ -117,6 +127,7 @@ internal class EpubBookPaginator(
         }
     }
 
+    /** Mide el capítulo actual hasta que se estabilicen recursos; a los 20 segundos señala fallo y pausa. */
     private fun measureChapter() {
         val book = source ?: return
         paginationPaused = false
@@ -126,6 +137,7 @@ internal class EpubBookPaginator(
         postDelayed(timeout, 20_000)
     }
 
+    /** Cancela trabajo y temporizadores propios, desconecta callbacks y destruye la WebView; no reutilizar después. */
     fun release() {
         closed = true
         cacheJob?.cancel()

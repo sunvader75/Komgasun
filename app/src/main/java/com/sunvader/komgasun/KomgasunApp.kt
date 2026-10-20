@@ -29,6 +29,11 @@ class KomgasunApp : Application(), ImageLoaderFactory {
     lateinit var repository: KomgaRepository
         private set
 
+    /**
+     * Inicializa las dependencias compartidas y observa la configuración durante la vida del proceso.
+     * La referencia atómica permite al interceptor de imágenes consultar la última configuración
+     * recibida sin bloquear su hilo ni leer las preferencias en cada petición.
+     */
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -44,6 +49,11 @@ class KomgasunApp : Application(), ImageLoaderFactory {
         }
     }
 
+    /**
+     * Crea el cargador de Coil con tiempos de conexión/lectura de 30/60 segundos y fundido de imágenes.
+     * Añade autenticación básica desde la configuración en memoria solo si la petición no incluye
+     * Authorization. No filtra por destino: esta política se aplica a las peticiones del cargador.
+     */
     override fun newImageLoader(): ImageLoader {
         val okHttpClient = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)

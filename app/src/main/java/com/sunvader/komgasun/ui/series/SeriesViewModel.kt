@@ -49,6 +49,7 @@ class SeriesViewModel(
         }
     }
 
+    /** Alterna un filtro; [ItemFilter.ALL] elimina la selección mediante [clearFilters]. */
     fun toggleFilter(filter: ItemFilter) {
         if (filter == ItemFilter.ALL) {
             clearFilters()
@@ -63,6 +64,7 @@ class SeriesViewModel(
         setFilters(emptySet())
     }
 
+    /** Publica y persiste la selección sin [ItemFilter.ALL]; vacío significa sin restricciones. */
     fun setFilters(filters: Set<ItemFilter>) {
         val cleaned = filters.filter { it != ItemFilter.ALL }.toSet()
         _uiState.update { it.copy(selectedFilters = cleaned) }
@@ -71,6 +73,7 @@ class SeriesViewModel(
         }
     }
 
+    /** Cambia el criterio local y lo persiste; la pantalla aplica la ordenación sin otra descarga. */
     fun setSortOrder(order: SeriesSortOrder) {
         _uiState.update { it.copy(sortOrder = order) }
         viewModelScope.launch {
@@ -78,10 +81,16 @@ class SeriesViewModel(
         }
     }
 
+    /** Renueva la semilla con la hora actual para recalcular el orden aleatorio, sin persistirla. */
     fun reshuffle() {
         _uiState.update { it.copy(randomSeed = System.currentTimeMillis()) }
     }
 
+    /**
+     * Recarga las series de esta biblioteca y conserva la lista anterior en caso de fallo.
+     * [showLoading] muestra la carga y borra el error previo; por defecto solo se activa sin datos.
+     * Publica los fallos del repositorio y desactiva la carga tanto en éxito como en error.
+     */
     fun loadSeries(showLoading: Boolean = _uiState.value.seriesList.isEmpty()) {
         if (showLoading) {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
@@ -101,6 +110,10 @@ class SeriesViewModel(
         }
     }
 
+    /**
+     * Solicita borrar los archivos de [seriesId], sin pedir confirmación en este nivel.
+     * Lanza la recarga incluso si falla y entrega el resultado a [onDone] sin esperar esa recarga.
+     */
     fun deleteSeries(seriesId: String, onDone: (Result<Unit>) -> Unit = {}) {
         viewModelScope.launch {
             val result = repository.deleteSeriesFile(seriesId)
@@ -109,6 +122,7 @@ class SeriesViewModel(
         }
     }
 
+    /** Purga la papelera de esta biblioteca y lanza una recarga antes de entregar el resultado. */
     fun emptyTrash(onDone: (Result<Unit>) -> Unit = {}) {
         viewModelScope.launch {
             val result = repository.emptyTrash(libraryId)

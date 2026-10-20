@@ -66,6 +66,13 @@ import com.sunvader.komgasun.ui.common.LoadingView
 import com.sunvader.komgasun.ui.common.ServerSwitchDialog
 import kotlinx.coroutines.launch
 
+/**
+ * Presenta las bibliotecas filtradas y las lecturas en curso con estados de carga/error separados.
+ * Recoge el estado con el ciclo de vida y actualiza las lecturas al reanudarse.
+ * Confirma las operaciones destructivas y muestra sus resultados; delega la sesión y las URL
+ * en el ViewModel. [onLogout] se ejecuta tras cerrar sesión, [onLibraryClick] entrega ID y nombre
+ * y [onBookClick] entrega el libro seleccionado para que el contenedor elija el lector.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibrariesScreen(
@@ -345,6 +352,10 @@ fun LibrariesScreen(
     }
 }
 
+/**
+ * Separa la apertura de la biblioteca de la solicitud de vaciar su papelera.
+ * [onEmptyTrash] no ejecuta el borrado: el contenedor debe confirmar la operación.
+ */
 @Composable
 fun LibraryItem(
     library: LibraryDto,

@@ -53,6 +53,7 @@ class LoginViewModel(
         }
     }
 
+    /** Conserva la URL editada de la conexión anterior y muestra la de [type], sin persistirla. */
     fun onServerTypeSelect(type: ServerType) {
         _uiState.update { current ->
             val updatedLocal = if (current.activeServerType == ServerType.LOCAL) current.serverUrl else current.localUrl
@@ -68,6 +69,7 @@ class LoginViewModel(
         }
     }
 
+    /** Actualiza a la vez el campo visible y la URL en memoria del tipo de conexión activo. */
     fun onServerUrlChange(url: String) {
         _uiState.update { current ->
             val updatedLocal = if (current.activeServerType == ServerType.LOCAL) url else current.localUrl
@@ -89,6 +91,12 @@ class LoginViewModel(
         _uiState.update { it.copy(password = password, errorMessage = null) }
     }
 
+    /**
+     * Valida URL y usuario antes de iniciar la autenticación asíncrona.
+     * Recorta sus espacios, elimina una barra final de la URL y añade HTTP si falta el esquema;
+     * la contraseña se envía sin modificar. Delega el acceso y su persistencia en el repositorio.
+     * Publica la carga y los errores en [uiState]; llama a [onSuccess] solo si el acceso tiene éxito.
+     */
     fun login(onSuccess: () -> Unit) {
         val state = _uiState.value
         var cleanUrl = state.serverUrl.trim().removeSuffix("/")

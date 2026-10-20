@@ -10,6 +10,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import com.sunvader.komgasun.theme.MyApplicationTheme
 
+/** Aloja la navegación Compose con el tema de la aplicación y dibujo de borde a borde. */
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)

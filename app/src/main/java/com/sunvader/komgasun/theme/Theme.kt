@@ -65,6 +65,14 @@ private val LightColorScheme =
     outlineVariant = LightOutlineVariant,
   )
 
+/**
+ * Aplica al contenido la paleta de la aplicación y su tipografía Material.
+ *
+ * [darkTheme] sigue el modo del sistema por defecto. Si [dynamicColor] está activado,
+ * usa los colores del dispositivo en Android 12 o posterior; en versiones anteriores
+ * mantiene la paleta propia clara u oscura. Por defecto no usa colores dinámicos.
+ * [content] se compone dentro de este tema, sin modificar el modo del sistema.
+ */
 @Composable
 fun MyApplicationTheme(
   darkTheme: Boolean = isSystemInDarkTheme(),

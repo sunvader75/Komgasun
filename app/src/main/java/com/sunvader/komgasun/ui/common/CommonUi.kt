@@ -64,6 +64,7 @@ fun LoadingView(
     }
 }
 
+/** Muestra el error y ofrece reintentar solo si [onRetry] no es nulo; no inicia reintentos por sí sola. */
 @Composable
 fun ErrorView(
     message: String,
@@ -139,6 +140,7 @@ fun EmptyView(
     }
 }
 
+/** Barra con título truncado y acciones del llamante; solo muestra regreso si se aporta [onBack]. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StandardTopBar(
@@ -174,6 +176,11 @@ fun StandardTopBar(
     )
 }
 
+/**
+ * Representa una selección múltiple controlada por el llamante, sin modificarla ni persistirla.
+ * Vacío o [ItemFilter.ALL] selecciona «Todos», que emite [onClearFilters]; las demás opciones
+ * emiten [onToggleFilter] con el filtro pulsado y se limitan a [availableFilters].
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilterChipsRow(

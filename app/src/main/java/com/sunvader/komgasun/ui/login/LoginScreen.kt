@@ -55,6 +55,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sunvader.komgasun.R
 import com.sunvader.komgasun.data.model.ServerType
 
+/**
+ * Vincula el formulario al estado del ViewModel respetando el ciclo de vida.
+ * El botón y la acción del teclado delegan el acceso y ocultan el foco; el botón se deshabilita
+ * durante la carga. Los errores se muestran en el formulario y [onLoginSuccess] permite navegar
+ * únicamente tras el éxito comunicado por el ViewModel. La visibilidad de la contraseña es local.
+ */
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit,

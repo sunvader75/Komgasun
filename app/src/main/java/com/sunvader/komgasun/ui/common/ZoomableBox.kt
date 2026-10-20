@@ -22,6 +22,15 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 
+/**
+ * Aplica ampliación y desplazamiento acotado al contenido sin bloquear el paginador a escala normal.
+ * El pellizco limita la escala entre [minScale] y [maxScale], que deben formar un intervalo válido.
+ * El doble toque alterna entre 1 y 2,5, independientemente de esos límites. Cambiar [resetKey]
+ * restablece escala y desplazamiento y notifica que ya no hay ampliación ni gesto multitáctil.
+ * [onZoomChanged] usa el umbral 1,05; [onMultiTouchChanged] permite suspender el desplazamiento
+ * del contenedor desde la fase inicial del gesto. Con ampliación se consume el arrastre de un
+ * dedo; sin ella se deja libre para el paginador. [onTap] recibe el toque simple.
+ */
 @Composable
 fun ZoomableBox(
     modifier: Modifier = Modifier,

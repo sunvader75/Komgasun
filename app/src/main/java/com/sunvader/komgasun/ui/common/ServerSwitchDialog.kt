@@ -42,6 +42,12 @@ import androidx.compose.ui.unit.dp
 import com.sunvader.komgasun.R
 import com.sunvader.komgasun.data.model.ServerType
 
+/**
+ * Permite cambiar al otro tipo de conexión o editar las dos URL en borradores locales.
+ * Si la otra URL está vacía abre la edición en vez de emitir [onSwitchServer]. Cancelar restaura
+ * las URL recibidas; guardar emite [onSaveUrls] con el tipo activo y sale del modo de edición,
+ * sin validar, persistir ni cerrar el diálogo por sí mismo. [onDismiss] delega el cierre.
+ */
 @Composable
 fun ServerSwitchDialog(
     activeServerType: ServerType,

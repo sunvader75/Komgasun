@@ -66,6 +66,7 @@ class LibrariesViewModel(
         loadLibraries()
     }
 
+    /** Alterna un filtro o borra todos si se elige [ItemFilter.ALL]. */
     fun toggleFilter(filter: ItemFilter) {
         if (filter == ItemFilter.ALL) {
             clearFilters()
@@ -80,6 +81,7 @@ class LibrariesViewModel(
         setFilters(emptySet())
     }
 
+    /** Publica y persiste los filtros sin [ItemFilter.ALL]; vacío representa todas las bibliotecas. */
     fun setFilters(filters: Set<ItemFilter>) {
         val cleaned = filters.filter { it != ItemFilter.ALL }.toSet()
         _uiState.update { it.copy(selectedFilters = cleaned) }
@@ -88,6 +90,11 @@ class LibrariesViewModel(
         }
     }
 
+    /**
+     * Recarga «Continuar leyendo» con indicador y error independientes de las bibliotecas.
+     * No sustituye la lista si una mutación confirmada ha cambiado su revisión desde el inicio;
+     * así una respuesta antigua no restaura libros retirados tras modificar su estado o borrarlos.
+     */
     fun loadInProgressBooks() {
         val revision = progressRevision
         _uiState.update { it.copy(progressLoading = true, progressError = null) }
@@ -105,11 +112,13 @@ class LibrariesViewModel(
         }
     }
 
+    /** Inicia en paralelo la recarga de bibliotecas con indicador y la de lecturas en curso. */
     fun loadLibraries() {
         loadInProgressBooks()
         refreshLibraries(showLoading = true)
     }
 
+    /** Recarga las bibliotecas, conservando los datos previos en caso de error. */
     private fun refreshLibraries(showLoading: Boolean = false) {
         if (showLoading) {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
@@ -129,14 +138,21 @@ class LibrariesViewModel(
         }
     }
 
+    /** Sincroniza el estado de un libro en curso y lo retira de la lista si la operación tiene éxito. */
     fun setBookReadStatus(book: BookDto, completed: Boolean, onDone: (Result<Unit>) -> Unit = {}) {
         updateBook(book.id, onDone) { repository.setBookReadStatus(book, completed) }
     }
 
+    /** Solicita borrar el archivo de un libro en curso; la confirmación corresponde a la pantalla. */
     fun deleteBook(bookId: String, onDone: (Result<Unit>) -> Unit = {}) {
         updateBook(bookId, onDone) { repository.deleteBookFile(bookId) }
     }
 
+    /**
+     * Serializa las mutaciones por libro y exige que siga presente en las lecturas en curso.
+     * Si se rechaza la petición no se llama a [onDone]. Tras el éxito invalida respuestas antiguas,
+     * retira el libro y lanza la recarga de bibliotecas; libera siempre la marca de operación.
+     */
     private fun updateBook(
         bookId: String,
         onDone: (Result<Unit>) -> Unit,
@@ -149,7 +165,7 @@ class LibrariesViewModel(
             try {
                 val result = action()
                 result.onSuccess {
-                    // Ignore progress fetches started before this server-confirmed change.
+                    // Ignora consultas de progreso anteriores a este cambio confirmado por el servidor.
                     progressRevision++
                     _uiState.update { state ->
                         state.copy(inProgressBooks = state.inProgressBooks.filterNot { it.id == bookId })
@@ -163,6 +179,7 @@ class LibrariesViewModel(
         }
     }
 
+    /** Solicita purgar la papelera indicada y lanza ambas recargas antes de avisar a [onDone]. */
     fun emptyTrash(libraryId: String, onDone: (Result<Unit>) -> Unit = {}) {
         viewModelScope.launch {
             val result = repository.emptyTrash(libraryId)
@@ -171,6 +188,10 @@ class LibrariesViewModel(
         }
     }
 
+    /**
+     * Purga secuencialmente las bibliotecas presentes al empezar, sin detenerse por un fallo.
+     * Lanza la recarga y comunica el último error encontrado, o éxito si no hubo ninguno.
+     */
     fun emptyTrashAll(onDone: (Result<Unit>) -> Unit = {}) {
         viewModelScope.launch {
             val list = _uiState.value.libraries
@@ -188,6 +209,10 @@ class LibrariesViewModel(
         }
     }
 
+    /**
+     * Delega el cambio de conexión y devuelve la URL mediante [onResult].
+     * Una URL vacía se comunica como fallo; solo con una URL no vacía se recargan las listas.
+     */
     fun switchServer(type: ServerType, onResult: (Result<String>) -> Unit) {
         viewModelScope.launch {
             val targetUrl = repository.switchServer(type)
@@ -200,6 +225,7 @@ class LibrariesViewModel(
         }
     }
 
+    /** Guarda ambas direcciones y el tipo activo; inicia la recarga antes de llamar a [onSaved]. */
     fun saveServerUrls(localUrl: String, remoteUrl: String, activeType: ServerType, onSaved: () -> Unit = {}) {
         viewModelScope.launch {
             repository.saveServerUrls(localUrl, remoteUrl, activeType)
@@ -208,6 +234,7 @@ class LibrariesViewModel(
         }
     }
 
+    /** Delega el cierre de sesión y llama a [onLoggedOut] después, para permitir la navegación. */
     fun logout(onLoggedOut: () -> Unit) {
         viewModelScope.launch {
             repository.logout()

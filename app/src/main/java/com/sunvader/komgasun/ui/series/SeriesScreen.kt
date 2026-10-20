@@ -77,6 +77,12 @@ import com.sunvader.komgasun.ui.common.FilterChipsRow
 import com.sunvader.komgasun.ui.common.LoadingView
 import kotlinx.coroutines.launch
 
+/**
+ * Muestra las series de [libraryId], filtradas y ordenadas en memoria según las preferencias.
+ * Recoge el estado con el ciclo de vida y recarga al reanudarse sin forzar el indicador.
+ * Distingue carga, error y ausencia de resultados; confirma borrados y vaciados de papelera.
+ * [onSeriesClick] recibe el identificador y el título visible; [onBack] delega el regreso.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SeriesScreen(
@@ -310,6 +316,11 @@ fun SeriesScreen(
     }
 }
 
+/**
+ * Presenta una serie dando prioridad al estado no disponible sobre los estados de lectura.
+ * No solicita miniatura sin [serverUrl]. [onDeleteClick] solo solicita la acción al contenedor,
+ * que debe encargarse de confirmarla y ejecutarla; [onClick] abre la serie.
+ */
 @Composable
 fun SeriesGridItem(
     series: SeriesDto,

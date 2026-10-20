@@ -77,6 +77,13 @@ import com.sunvader.komgasun.ui.common.FilterChipsRow
 import com.sunvader.komgasun.ui.common.LoadingView
 import kotlinx.coroutines.launch
 
+/**
+ * Muestra los libros filtrados de la serie y recoge el estado respetando el ciclo de vida.
+ * Recarga al reanudarse sin forzar el indicador; distingue carga, error y lista vacía.
+ * Confirma los borrados y el vaciado de papelera antes de delegarlos en el ViewModel.
+ * [onBookClick] recibe el libro elegido; [onBack] también se invoca tras borrar la serie con éxito.
+ * [libraryId] habilita el vaciado de papelera cuando no está vacío.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BooksScreen(
@@ -343,6 +350,12 @@ fun BooksScreen(
     }
 }
 
+/**
+ * Presenta portada, formato y progreso usando los mismos criterios que el catálogo.
+ * Una [serverUrl] vacía evita solicitar la miniatura. Las acciones solo emiten callbacks:
+ * [onDeleteClick] no borra ni pide confirmación y [onReadStatusClick] recibe el estado deseado.
+ * [readStatusUpdating] deshabilita los cambios de lectura; [showActions] oculta todo el menú.
+ */
 @Composable
 fun BookGridItem(
     book: BookDto,

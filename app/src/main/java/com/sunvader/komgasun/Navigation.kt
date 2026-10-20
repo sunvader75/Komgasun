@@ -24,6 +24,10 @@ import com.sunvader.komgasun.ui.reader.epub.EpubReaderScreen
 import com.sunvader.komgasun.ui.reader.pdf.PdfReaderScreen
 import com.sunvader.komgasun.ui.series.SeriesScreen
 
+/**
+ * Consulta la configuración activa antes de crear la pila, mostrando carga mientras tanto.
+ * Su presencia lleva a bibliotecas y su ausencia al acceso; no valida aquí la sesión en red.
+ */
 @Composable
 fun MainNavigation() {
     val repository = remember { KomgasunApp.instance.repository }
@@ -44,6 +48,11 @@ fun MainNavigation() {
     AppNavigationGraph(startKey = initialKey!!)
 }
 
+/**
+ * Conserva la pila iniciada en [startKey] y conecta los callbacks de las pantallas.
+ * Acceder o salir de sesión sustituye toda la pila; abrir contenido añade una entrada.
+ * Elige lector por formato y usa el de cómics para formatos desconocidos; volver retira la última.
+ */
 @Composable
 private fun AppNavigationGraph(startKey: NavKey) {
     val backStack: NavBackStack<NavKey> = rememberNavBackStack(startKey)

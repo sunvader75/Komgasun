@@ -51,7 +51,7 @@ private fun AppNavigationGraph(startKey: NavKey) {
     NavDisplay(
         backStack = backStack,
         onBack = { backStack.removeLastOrNull() },
-        entryProvider = entryProvider<NavKey> {
+        entryProvider = entryProvider {
             entry<LoginNavKey> {
                 LoginScreen(
                     onLoginSuccess = {

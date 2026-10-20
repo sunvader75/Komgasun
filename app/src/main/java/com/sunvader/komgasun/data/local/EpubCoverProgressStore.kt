@@ -3,9 +3,9 @@ package com.sunvader.komgasun.data.local
 import android.content.SharedPreferences
 import com.sunvader.komgasun.data.model.EpubCoverProgress
 import com.sunvader.komgasun.data.model.ServerConfig
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.security.MessageDigest
+import androidx.core.content.edit
 
 /** Private, bounded presentation summaries; never used to send a locator or change read status. */
 class EpubCoverProgressStore(private val preferences: SharedPreferences) {
@@ -23,15 +23,17 @@ class EpubCoverProgressStore(private val preferences: SharedPreferences) {
         require(summary.isValid)
         if (read(config, bookId) == summary) return
         val key = key(config, bookId)
-        val editor = preferences.edit()
-        if (!preferences.contains(key)) {
-            preferences.all.keys.sorted().take((preferences.all.size - 255).coerceAtLeast(0)).forEach(editor::remove)
+        preferences.edit {
+            if (!preferences.contains(key)) {
+                preferences.all.keys.sorted().take((preferences.all.size - 255).coerceAtLeast(0))
+                    .forEach(this::remove)
+            }
+            putString(key, json.encodeToString(summary))
         }
-        editor.putString(key, json.encodeToString(summary)).apply()
     }
 
     fun clear(config: ServerConfig, bookId: String) {
-        preferences.edit().remove(key(config, bookId)).apply()
+        preferences.edit { remove(key(config, bookId))}
     }
 
     private fun key(config: ServerConfig, bookId: String): String = MessageDigest.getInstance("SHA-256")

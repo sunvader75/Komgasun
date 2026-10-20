@@ -15,11 +15,17 @@ import com.sunvader.komgasun.data.model.ServerType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
+import java.security.GeneralSecurityException
 import java.io.IOException
 
 val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "komgasun_prefs")
 
-class PreferencesManager(private val context: Context) {
+class PreferencesManager(
+    private val context: Context,
+    private val store: DataStore<Preferences> = context.dataStore,
+    private val credentialCipher: CredentialCipher = CredentialCipher()
+) {
     val epubCoverProgress = EpubCoverProgressStore(context.getSharedPreferences("epub_cover_progress", Context.MODE_PRIVATE))
 
     companion object {
@@ -28,7 +34,9 @@ class PreferencesManager(private val context: Context) {
         val KEY_REMOTE_SERVER_URL = stringPreferencesKey("remote_server_url")
         val KEY_ACTIVE_SERVER_TYPE = stringPreferencesKey("active_server_type")
         val KEY_USERNAME = stringPreferencesKey("username")
+        // Legacy plaintext key: read only for migration, never written by the app.
         val KEY_PASSWORD = stringPreferencesKey("password")
+        private val KEY_ENCRYPTED_PASSWORD = stringPreferencesKey("encrypted_password_v1")
         val KEY_IS_LOGGED_IN = booleanPreferencesKey("is_logged_in")
         val KEY_LIBRARIES_FILTER = stringPreferencesKey("libraries_filter")
         val KEY_SERIES_FILTER = stringPreferencesKey("series_filter")
@@ -44,7 +52,35 @@ class PreferencesManager(private val context: Context) {
         return clean
     }
 
-    val serverConfigFlow: Flow<ServerConfig?> = context.dataStore.data
+    private fun decryptPassword(value: String?): String? {
+        if (value == null) return null
+        return try {
+            credentialCipher.decrypt(value)
+        } catch (_: GeneralSecurityException) {
+            null
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+    }
+
+    val serverConfigFlow: Flow<ServerConfig?> = store.data
+        .onStart {
+            store.edit { preferences ->
+                val legacy = preferences[KEY_PASSWORD]
+                if (legacy != null && preferences[KEY_ENCRYPTED_PASSWORD] == null) {
+                    try {
+                        preferences[KEY_ENCRYPTED_PASSWORD] = credentialCipher.encrypt(legacy)
+                    } catch (_: GeneralSecurityException) {
+                        preferences[KEY_IS_LOGGED_IN] = false
+                    }
+                }
+                preferences.remove(KEY_PASSWORD)
+                if (decryptPassword(preferences[KEY_ENCRYPTED_PASSWORD]) == null) {
+                    preferences.remove(KEY_ENCRYPTED_PASSWORD)
+                    preferences[KEY_IS_LOGGED_IN] = false
+                }
+            }
+        }
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -55,37 +91,37 @@ class PreferencesManager(private val context: Context) {
         .map { preferences ->
             val url = preferences[KEY_SERVER_URL]
             val username = preferences[KEY_USERNAME]
-            val password = preferences[KEY_PASSWORD]
+            val password = decryptPassword(preferences[KEY_ENCRYPTED_PASSWORD])
             val isLoggedIn = preferences[KEY_IS_LOGGED_IN] ?: false
 
-            if (isLoggedIn && !url.isNullOrBlank() && !username.isNullOrBlank()) {
+            if (isLoggedIn && password != null && !url.isNullOrBlank() && !username.isNullOrBlank()) {
                 ServerConfig(
                     serverUrl = url,
                     username = username,
-                    password = password ?: ""
+                    password = password
                 )
             } else {
                 null
             }
         }
 
-    val savedUrlFlow: Flow<String> = context.dataStore.data
+    val savedUrlFlow: Flow<String> = store.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { it[KEY_SERVER_URL] ?: "" }
 
-    val localUrlFlow: Flow<String> = context.dataStore.data
+    val localUrlFlow: Flow<String> = store.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { it[KEY_LOCAL_SERVER_URL] ?: it[KEY_SERVER_URL] ?: "" }
 
-    val remoteUrlFlow: Flow<String> = context.dataStore.data
+    val remoteUrlFlow: Flow<String> = store.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { it[KEY_REMOTE_SERVER_URL] ?: "" }
 
-    val activeServerTypeFlow: Flow<ServerType> = context.dataStore.data
+    val activeServerTypeFlow: Flow<ServerType> = store.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { ServerType.fromName(it[KEY_ACTIVE_SERVER_TYPE]) }
 
-    val savedUsernameFlow: Flow<String> = context.dataStore.data
+    val savedUsernameFlow: Flow<String> = store.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { it[KEY_USERNAME] ?: "" }
 
@@ -97,42 +133,42 @@ class PreferencesManager(private val context: Context) {
             .toSet()
     }
 
-    val librariesFilterFlow: Flow<Set<ItemFilter>> = context.dataStore.data
+    val librariesFilterFlow: Flow<Set<ItemFilter>> = store.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { parseFilterSet(it[KEY_LIBRARIES_FILTER]) }
 
-    val seriesFilterFlow: Flow<Set<ItemFilter>> = context.dataStore.data
+    val seriesFilterFlow: Flow<Set<ItemFilter>> = store.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { parseFilterSet(it[KEY_SERIES_FILTER]) }
 
-    val booksFilterFlow: Flow<Set<ItemFilter>> = context.dataStore.data
+    val booksFilterFlow: Flow<Set<ItemFilter>> = store.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { parseFilterSet(it[KEY_BOOKS_FILTER]) }
 
-    val seriesSortFlow: Flow<SeriesSortOrder> = context.dataStore.data
+    val seriesSortFlow: Flow<SeriesSortOrder> = store.data
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { SeriesSortOrder.fromName(it[KEY_SERIES_SORT]) }
 
     suspend fun saveLibrariesFilter(filters: Set<ItemFilter>) {
-        context.dataStore.edit { preferences ->
+        store.edit { preferences ->
             preferences[KEY_LIBRARIES_FILTER] = filters.joinToString(",") { it.name }
         }
     }
 
     suspend fun saveSeriesFilter(filters: Set<ItemFilter>) {
-        context.dataStore.edit { preferences ->
+        store.edit { preferences ->
             preferences[KEY_SERIES_FILTER] = filters.joinToString(",") { it.name }
         }
     }
 
     suspend fun saveBooksFilter(filters: Set<ItemFilter>) {
-        context.dataStore.edit { preferences ->
+        store.edit { preferences ->
             preferences[KEY_BOOKS_FILTER] = filters.joinToString(",") { it.name }
         }
     }
 
     suspend fun saveSeriesSort(order: SeriesSortOrder) {
-        context.dataStore.edit { preferences ->
+        store.edit { preferences ->
             preferences[KEY_SERIES_SORT] = order.name
         }
     }
@@ -141,7 +177,7 @@ class PreferencesManager(private val context: Context) {
         val cleanLocal = normalizeUrl(localUrl)
         val cleanRemote = normalizeUrl(remoteUrl)
         val activeUrl = if (activeType == ServerType.REMOTE) cleanRemote else cleanLocal
-        context.dataStore.edit { preferences ->
+        store.edit { preferences ->
             if (cleanLocal.isNotBlank()) preferences[KEY_LOCAL_SERVER_URL] = cleanLocal
             if (cleanRemote.isNotBlank()) preferences[KEY_REMOTE_SERVER_URL] = cleanRemote
             preferences[KEY_ACTIVE_SERVER_TYPE] = activeType.name
@@ -153,7 +189,7 @@ class PreferencesManager(private val context: Context) {
 
     suspend fun switchActiveServer(type: ServerType): String {
         var targetUrl = ""
-        context.dataStore.edit { preferences ->
+        store.edit { preferences ->
             val localUrl = preferences[KEY_LOCAL_SERVER_URL] ?: preferences[KEY_SERVER_URL] ?: ""
             val remoteUrl = preferences[KEY_REMOTE_SERVER_URL] ?: ""
             targetUrl = if (type == ServerType.REMOTE) remoteUrl else localUrl
@@ -172,10 +208,12 @@ class PreferencesManager(private val context: Context) {
     ) {
         val cleanUrl = normalizeUrl(serverConfig.serverUrl)
         val cleanOther = otherUrl?.let { normalizeUrl(it) }
-        context.dataStore.edit { preferences ->
+        val encryptedPassword = credentialCipher.encrypt(serverConfig.password)
+        store.edit { preferences ->
             preferences[KEY_SERVER_URL] = cleanUrl
             preferences[KEY_USERNAME] = serverConfig.username.trim()
-            preferences[KEY_PASSWORD] = serverConfig.password
+            preferences[KEY_ENCRYPTED_PASSWORD] = encryptedPassword
+            preferences.remove(KEY_PASSWORD)
             preferences[KEY_IS_LOGGED_IN] = true
             preferences[KEY_ACTIVE_SERVER_TYPE] = type.name
             if (type == ServerType.LOCAL) {
@@ -193,9 +231,10 @@ class PreferencesManager(private val context: Context) {
     }
 
     suspend fun clearCredentials() {
-        context.dataStore.edit { preferences ->
+        store.edit { preferences ->
             preferences[KEY_IS_LOGGED_IN] = false
             preferences.remove(KEY_PASSWORD)
+            preferences.remove(KEY_ENCRYPTED_PASSWORD)
         }
     }
 }

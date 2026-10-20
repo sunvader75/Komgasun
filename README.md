@@ -66,7 +66,9 @@ Para alternar entre casa y acceso remoto, utiliza **Alternar servidor**. En **Co
 - HTTP no cifra las credenciales ni el contenido en una conexión directa. Utilízalo solamente en redes de confianza o dentro de un túnel adecuado.
 - Tailscale cifra el tráfico entre sus dispositivos. Si accedes mediante un *subnet router*, el tramo desde ese router hasta Komga no queda cifrado por Tailscale.
 - No publiques el puerto HTTP de Komga directamente en Internet. Para acceso público, configura HTTPS; la [documentación de Komga](https://komga.org/docs/installation/https/) explica cómo hacerlo mediante un proxy inverso.
-- La aplicación guarda las credenciales en el almacenamiento privado de Android mediante DataStore, sin cifrado adicional específico para la contraseña. Protege el dispositivo y usa una contraseña exclusiva para Komga.
+- La contraseña se guarda cifrada con AES-256-GCM en DataStore; la clave permanece en Android Keystore. Las contraseñas guardadas por versiones anteriores se cifran al leer la configuración por primera vez. Este cifrado protege el almacenamiento, no el tráfico HTTP ni un dispositivo comprometido mientras la aplicación está en uso.
+- El archivo de preferencias que contiene las credenciales se excluye de las copias de seguridad y de la transferencia entre dispositivos. Esto también excluye las URL y los filtros guardados en ese archivo. Tras restaurar la aplicación, o si se pierde la clave o no se puede descifrar la contraseña, se requiere iniciar sesión de nuevo. Las copias antiguas ya existentes no se eliminan retroactivamente.
+- Protege el dispositivo y usa una contraseña exclusiva para Komga.
 
 ## Compilar desde el código fuente
 

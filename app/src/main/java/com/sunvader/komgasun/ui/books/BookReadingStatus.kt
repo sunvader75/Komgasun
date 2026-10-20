@@ -7,7 +7,7 @@ import com.sunvader.komgasun.data.model.ItemFilter
 import com.sunvader.komgasun.data.model.detectBookType
 import com.sunvader.komgasun.data.model.matchesFilter
 
-/** Presentation only: availability never replaces the reading state. */
+/** Estado de presentación: la disponibilidad nunca sustituye al estado de lectura. */
 data class BookReadingStatus(
     val readBadge: String? = null,
     val detail: String? = null,
@@ -15,6 +15,12 @@ data class BookReadingStatus(
     val unavailable: Boolean = false
 )
 
+/**
+ * Calcula distintivo, detalle y fracción para la portada sin modificar el libro.
+ * Solo completed indica finalización; los porcentajes en curso se limitan al 99 %.
+ * EPUB usa progreso global válido, nunca posición del servidor dividida por páginas físicas.
+ * Si no hay un total fiable, deja la fracción nula y muestra solo el estado o la página conocida.
+ */
 fun BookDto.readingStatus(): BookReadingStatus {
     val unavailable = matchesFilter(ItemFilter.UNAVAILABLE)
     val progress = readProgress
@@ -39,13 +45,13 @@ fun BookDto.readingStatus(): BookReadingStatus {
     return BookReadingStatus(detail = "En lectura · $percent %", fraction = percent / 100f, unavailable = unavailable)
 }
 
-/** Explicit unread overrides must not leave an old local percentage attached to the UI copy. */
+/** Devuelve una copia con el progreso indicado; al marcar sin leer elimina el porcentaje EPUB local obsoleto. */
 fun BookDto.withReadingProgress(progress: ReadProgressDto): BookDto = copy(
     readProgress = progress,
     epubProgress = if (!progress.completed && progress.page <= 0) null else epubProgress
 )
 
-/** EPUB positions from Komga are not display pages; use only the last reader-measured total. */
+/** Devuelve el total positivo de páginas; en EPUB solo admite el último total medido válido, o `null` si falta. */
 fun BookDto.coverPageCount(): Int? = if (detectBookType() == BookType.EPUB)
     epubProgress?.takeIf { it.isValid }?.totalPages
 else media.pagesCount.takeIf { it > 0 }

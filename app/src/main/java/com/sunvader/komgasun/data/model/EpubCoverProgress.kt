@@ -2,7 +2,7 @@ package com.sunvader.komgasun.data.model
 
 import kotlinx.serialization.Serializable
 
-/** Last reader-known whole-book progress. totalPages belongs to the last measured layout. */
+/** Último progreso global conocido por el lector; totalPages corresponde a la última maquetación medida. */
 @Serializable
 data class EpubCoverProgress(
     val fraction: Double,
@@ -12,6 +12,7 @@ data class EpubCoverProgress(
         (totalPages == null || totalPages in 1..1_000_000_000)
 
     companion object {
+        /** Extrae solo totalProgression, sin inventar un total de páginas; devuelve `null` si falta o no es válido. */
         fun fromRemote(progression: EpubProgressionDto?): EpubCoverProgress? =
             progression?.locator?.locations?.totalProgression?.let { EpubCoverProgress(it) }?.takeIf { it.isValid }
     }

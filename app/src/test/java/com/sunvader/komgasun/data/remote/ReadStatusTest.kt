@@ -8,6 +8,11 @@ import java.net.ServerSocket
 import kotlin.concurrent.thread
 
 class ReadStatusTest {
+    /**
+     * Ejecuta el cambio de estado contra un servidor de prueba de una sola petición.
+     * Responde con [status] y devuelve la línea de petición y el cuerpo separados por
+     * un salto de línea, junto con el resultado de la API. Comprueba que termina el hilo servidor.
+     */
     private fun request(completed: Boolean, status: Int = 204): Pair<String, Result<Unit>> {
         ServerSocket(0).use { server ->
             server.soTimeout = 5000

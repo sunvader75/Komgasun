@@ -44,6 +44,7 @@ class PreferencesManager(
         val KEY_SERIES_SORT = stringPreferencesKey("series_sort")
     }
 
+    /** Recorta espacios y una barra final; añade HTTP si falta el esquema, sin validar la URL. */
     private fun normalizeUrl(url: String): String {
         var clean = url.trim().removeSuffix("/")
         if (clean.isNotBlank() && !clean.startsWith("http://", ignoreCase = true) && !clean.startsWith("https://", ignoreCase = true)) {
@@ -52,6 +53,7 @@ class PreferencesManager(
         return clean
     }
 
+    /** Devuelve la contraseña descifrada, o `null` si falta, tiene un formato inválido o falla la seguridad. */
     private fun decryptPassword(value: String?): String? {
         if (value == null) return null
         return try {
@@ -125,6 +127,7 @@ class PreferencesManager(
         .catch { if (it is IOException) emit(emptyPreferences()) else throw it }
         .map { it[KEY_USERNAME] ?: "" }
 
+    /** Recupera filtros separados por comas; ignora nombres desconocidos, duplicados y ALL. */
     private fun parseFilterSet(raw: String?): Set<ItemFilter> {
         if (raw.isNullOrBlank()) return emptySet()
         return raw.split(",")
@@ -173,6 +176,11 @@ class PreferencesManager(
         }
     }
 
+    /**
+     * Normaliza ambas direcciones y selecciona el tipo activo sin comprobar la conexión.
+     * Las direcciones vacías no sustituyen las guardadas; tampoco vacían la URL activa.
+     * Los errores de persistencia se propagan.
+     */
     suspend fun saveServerUrls(localUrl: String, remoteUrl: String, activeType: ServerType) {
         val cleanLocal = normalizeUrl(localUrl)
         val cleanRemote = normalizeUrl(remoteUrl)
@@ -187,6 +195,11 @@ class PreferencesManager(
         }
     }
 
+    /**
+     * Cambia el tipo activo y devuelve su URL guardada, o una cadena vacía si no existe.
+     * Para LOCAL admite la URL antigua como alternativa; un destino vacío conserva la URL activa.
+     * No autentica de nuevo y propaga los errores de persistencia.
+     */
     suspend fun switchActiveServer(type: ServerType): String {
         var targetUrl = ""
         store.edit { preferences ->
@@ -201,6 +214,11 @@ class PreferencesManager(
         return targetUrl
     }
 
+    /**
+     * Cifra la contraseña antes de guardar la sesión y elimina su antigua copia en texto plano.
+     * Normaliza las URL y recorta el usuario; [otherUrl], si no está vacía, actualiza el otro tipo.
+     * Marca la sesión como iniciada sin autenticarla. Propaga errores de cifrado y persistencia.
+     */
     suspend fun saveCredentials(
         serverConfig: ServerConfig,
         type: ServerType = ServerType.LOCAL,
@@ -230,6 +248,7 @@ class PreferencesManager(
         }
     }
 
+    /** Cierra la sesión y elimina ambas formas de contraseña; conserva usuario, URL y preferencias. */
     suspend fun clearCredentials() {
         store.edit { preferences ->
             preferences[KEY_IS_LOGGED_IN] = false

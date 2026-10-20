@@ -10,10 +10,12 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-/** Stores only version, nonce and authenticated ciphertext; the key never leaves Android Keystore. */
+/** Conserva solo versión, nonce y texto cifrado autenticado; la clave no sale de Android Keystore. */
 class CredentialCipher(private val alias: String = "komgasun.credentials.v1") {
+    /** Abre y carga Android Keystore; propaga los errores del proveedor. */
     private fun keyStore() = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
+    /** Reutiliza la clave del alias o crea una AES de 256 bits para GCM con nonce aleatorio. */
     @Synchronized
     private fun encryptionKey(): SecretKey {
         val store = keyStore()
@@ -28,6 +30,10 @@ class CredentialCipher(private val alias: String = "komgasun.credentials.v1") {
         }.generateKey()
     }
 
+    /**
+     * Cifra la contraseña UTF-8 con AES-GCM y devuelve `v1:nonce:cifrado` en Base64 sin saltos.
+     * Crea la clave si falta y propaga los errores criptográficos.
+     */
     fun encrypt(password: String): String {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, encryptionKey())
@@ -35,6 +41,11 @@ class CredentialCipher(private val alias: String = "komgasun.credentials.v1") {
         return "v1:${encode(cipher.iv)}:${encode(encrypted)}"
     }
 
+    /**
+     * Autentica y descifra un valor v1 con nonce de 12 bytes; devuelve la contraseña UTF-8.
+     * Rechaza formatos inválidos con IllegalArgumentException y propaga errores de seguridad,
+     * incluida una clave ausente o una autenticación GCM fallida; nunca crea una clave al leer.
+     */
     fun decrypt(value: String): String {
         val parts = value.split(':')
         require(parts.size == 3 && parts[0] == "v1") { "Invalid credential format" }
@@ -47,5 +58,6 @@ class CredentialCipher(private val alias: String = "komgasun.credentials.v1") {
         return String(cipher.doFinal(Base64.decode(parts[2], Base64.NO_WRAP)), Charsets.UTF_8)
     }
 
+    /** Codifica bytes en Base64 sin saltos de línea para el formato persistido. */
     private fun encode(bytes: ByteArray) = Base64.encodeToString(bytes, Base64.NO_WRAP)
 }

@@ -11,6 +11,13 @@ class EpubProgressionTest {
     private val payload = EpubProgressionDto("2026-10-17T22:00:00.123Z", EpubDeviceDto("stable-private-client-id", "Komgasun"),
         EpubLocatorDto("OEBPS/chapter.xhtml", "application/xhtml+xml", EpubLocationsDto(0.35)))
     private val body = """{"modified":"2026-10-17T22:00:00.123Z","device":{"id":"stable-private-client-id","name":"Komgasun"},"locator":{"href":"OEBPS/chapter.xhtml","type":"application/xhtml+xml","locations":{"progression":0.35}}}"""
+    /**
+     * Atiende una petición HTTP local con [status] y [response], sin usar el proxy del sistema.
+     * [positions] selecciona la consulta de posiciones y tiene prioridad sobre [put];
+     * en otro caso consulta o guarda el progreso. Devuelve cabeceras y cuerpo capturados,
+     * separados por una línea vacía, junto con el resultado de la API; comprueba la
+     * autenticación y que termina el hilo servidor antes de devolverlos.
+     */
     private fun exchange(status: Int, response: String = "", put: Boolean = false, positions: Boolean = false): Pair<String, Result<*>> {
         ServerSocket(0, 50, java.net.InetAddress.getByName("127.0.0.1")).use { server ->
             server.soTimeout = 5000

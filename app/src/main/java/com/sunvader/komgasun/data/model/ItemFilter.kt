@@ -8,12 +8,14 @@ enum class ItemFilter(val label: String) {
     UNAVAILABLE("No disponible");
 
     companion object {
+        /** Resuelve el nombre sin distinguir mayúsculas; devuelve ALL si es nulo o desconocido. */
         fun fromName(name: String?): ItemFilter {
             return entries.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: ALL
         }
     }
 }
 
+/** Evalúa los contadores de la serie; los filtros de lectura excluyen series eliminadas o no disponibles. */
 fun SeriesDto.matchesFilter(filter: ItemFilter): Boolean {
     val isUnavailable = deleted || unavailable
     return when (filter) {
@@ -25,6 +27,7 @@ fun SeriesDto.matchesFilter(filter: ItemFilter): Boolean {
     }
 }
 
+/** Evalúa página y finalización; los filtros de lectura excluyen libros eliminados o con estado UNAVAILABLE/ERROR. */
 fun BookDto.matchesFilter(filter: ItemFilter): Boolean {
     val isUnavailable = deleted ||
             media.status.equals("UNAVAILABLE", ignoreCase = true) ||
@@ -39,6 +42,7 @@ fun BookDto.matchesFilter(filter: ItemFilter): Boolean {
     }
 }
 
+/** Filtra la disponibilidad; al no haber contadores, cualquier filtro de lectura acepta bibliotecas disponibles. */
 fun LibraryDto.matchesFilter(filter: ItemFilter): Boolean {
     return when (filter) {
         ItemFilter.ALL -> true
@@ -47,18 +51,21 @@ fun LibraryDto.matchesFilter(filter: ItemFilter): Boolean {
     }
 }
 
+/** Acepta si coincide algún filtro distinto de ALL, o siempre si no queda ninguno. */
 fun SeriesDto.matchesFilters(filters: Set<ItemFilter>): Boolean {
     val active = filters.filter { it != ItemFilter.ALL }
     if (active.isEmpty()) return true
     return active.any { this.matchesFilter(it) }
 }
 
+/** Acepta si coincide algún filtro distinto de ALL, o siempre si no queda ninguno. */
 fun BookDto.matchesFilters(filters: Set<ItemFilter>): Boolean {
     val active = filters.filter { it != ItemFilter.ALL }
     if (active.isEmpty()) return true
     return active.any { this.matchesFilter(it) }
 }
 
+/** Acepta si coincide algún filtro distinto de ALL, o siempre si no queda ninguno. */
 fun LibraryDto.matchesFilters(filters: Set<ItemFilter>): Boolean {
     val active = filters.filter { it != ItemFilter.ALL }
     if (active.isEmpty()) return true

@@ -36,6 +36,7 @@ class KomgaApiClient(
         coerceInputValues = true
     }
 
+    /** Construye una petición GET con autenticación Basic; requiere una URL admitida por OkHttp. */
     private fun buildRequest(url: String, config: ServerConfig): Request {
         val credential = Credentials.basic(config.username, config.password)
         return Request.Builder()
@@ -44,6 +45,7 @@ class KomgaApiClient(
             .build()
     }
 
+    /** Construye un PATCH autenticado con el JSON recibido, sin validar su contenido. */
     private fun buildJsonPatchRequest(url: String, config: ServerConfig, jsonBody: String): Request {
         val credential = Credentials.basic(config.username, config.password)
         val mediaType = "application/json; charset=utf-8".toMediaType()
@@ -55,6 +57,7 @@ class KomgaApiClient(
             .build()
     }
 
+    /** Construye un DELETE autenticado; aún no ejecuta la operación destructiva. */
     private fun buildDeleteRequest(url: String, config: ServerConfig): Request {
         val credential = Credentials.basic(config.username, config.password)
         return Request.Builder()
@@ -64,6 +67,7 @@ class KomgaApiClient(
             .build()
     }
 
+    /** Construye un POST autenticado con cuerpo vacío para acciones sin parámetros JSON. */
     private fun buildPostEmptyBodyRequest(url: String, config: ServerConfig): Request {
         val credential = Credentials.basic(config.username, config.password)
         return Request.Builder()
@@ -73,6 +77,12 @@ class KomgaApiClient(
             .build()
     }
 
+    /**
+     * Comprueba credenciales en E/S: prueba users/me v2 y, solo ante 404, v1 y bibliotecas.
+     * La alternativa de bibliotecas devuelve un usuario sintético con el nombre configurado.
+     * Devuelve fallos HTTP, de red o de decodificación en Result; no guarda la sesión.
+     * Requiere una URL válida: la construcción inicial de peticiones queda fuera del try.
+     */
     suspend fun authenticate(config: ServerConfig): Result<UserDto> = withContext(Dispatchers.IO) {
         val baseUrl = config.serverUrl.trim().removeSuffix("/")
 
@@ -125,6 +135,7 @@ class KomgaApiClient(
         }
     }
 
+    /** Obtiene bibliotecas en E/S; requiere configuración con URL válida y devuelve fallos HTTP, de red o JSON en Result. */
     suspend fun getLibraries(config: ServerConfig): Result<List<LibraryDto>> = withContext(Dispatchers.IO) {
         val baseUrl = config.serverUrl.trim().removeSuffix("/")
         val request = buildRequest("$baseUrl/api/v1/libraries", config)
@@ -143,6 +154,7 @@ class KomgaApiClient(
         }
     }
 
+    /** Obtiene la primera página de hasta 500 series de la biblioteca; devuelve fallos HTTP, de red o JSON en Result. */
     suspend fun getSeries(config: ServerConfig, libraryId: String): Result<List<SeriesDto>> = withContext(Dispatchers.IO) {
         val baseUrl = config.serverUrl.trim().removeSuffix("/")
         val url = "$baseUrl/api/v1/series?library_id=$libraryId&size=500"
@@ -162,6 +174,7 @@ class KomgaApiClient(
         }
     }
 
+    /** Obtiene la primera página de hasta 500 libros de la serie; devuelve fallos HTTP, de red o JSON en Result. */
     suspend fun getBooks(config: ServerConfig, seriesId: String): Result<List<BookDto>> = withContext(Dispatchers.IO) {
         val baseUrl = config.serverUrl.trim().removeSuffix("/")
         val url = "$baseUrl/api/v1/series/$seriesId/books?size=500"
@@ -181,6 +194,11 @@ class KomgaApiClient(
         }
     }
 
+    /**
+     * Reúne todas las páginas de libros en curso, solicitadas en bloques de 500 desde el índice cero.
+     * Devuelve fallos HTTP, IOException o SerializationException en Result, sin resultados parciales;
+     * otras excepciones se propagan.
+     */
     suspend fun getInProgressBooks(config: ServerConfig): Result<List<BookDto>> = withContext(Dispatchers.IO) {
         val books = mutableListOf<BookDto>()
         var pageNumber = 0
@@ -205,6 +223,7 @@ class KomgaApiClient(
         }
     }
 
+    /** Obtiene el detalle del libro en E/S; devuelve fallos HTTP, de red o JSON en Result. */
     suspend fun getBook(config: ServerConfig, bookId: String): Result<BookDto> = withContext(Dispatchers.IO) {
         val baseUrl = config.serverUrl.trim().removeSuffix("/")
         val url = "$baseUrl/api/v1/books/$bookId"
@@ -224,7 +243,11 @@ class KomgaApiClient(
         }
     }
 
-    /** Read the server's actual analyzed position set; do not derive it from local ZIP sizes. */
+    /**
+     * Obtiene las posiciones analizadas por el servidor, nunca inferidas del tamaño del ZIP local.
+     * Exige HTTP 200, un máximo de 16 MiB y entre 1 y 100 000 posiciones con total coincidente.
+     * Devuelve errores de lectura, formato o validación en Result; propaga la cancelación.
+     */
     suspend fun getEpubPositions(config: ServerConfig, bookId: String): Result<com.sunvader.komgasun.data.model.EpubPositionsDto> = withContext(Dispatchers.IO) {
         val url = "${config.serverUrl.trim().removeSuffix("/")}/api/v1/books/$bookId/positions"
         try {
@@ -251,7 +274,10 @@ class KomgaApiClient(
         catch (e: Exception) { Result.failure(e) }
     }
 
-    /** 204 means no saved locator; 404 is deliberately not treated as an empty position. */
+    /**
+     * Recupera el localizador EPUB: HTTP 204 devuelve éxito con `null`; 404 sigue siendo un fallo.
+     * HTTP 200 decodifica el progreso. Encapsula los errores en Result salvo la cancelación.
+     */
     suspend fun getEpubProgression(config: ServerConfig, bookId: String): Result<com.sunvader.komgasun.data.model.EpubProgressionDto?> = withContext(Dispatchers.IO) {
         val url = "${config.serverUrl.trim().removeSuffix("/")}/api/v1/books/$bookId/progression"
         try {
@@ -266,6 +292,11 @@ class KomgaApiClient(
         catch (e: Exception) { Result.failure(e) }
     }
 
+    /**
+     * Sustituye el localizador EPUB remoto por [progression] sin validarlo localmente.
+     * Solo HTTP 204 es éxito; incluye el cuerpo de error HTTP en el fallo y propaga la cancelación.
+     * Los errores al construir o serializar la petición, previos al try, también se propagan.
+     */
     suspend fun putEpubProgression(config: ServerConfig, bookId: String, progression: com.sunvader.komgasun.data.model.EpubProgressionDto): Result<Unit> = withContext(Dispatchers.IO) {
         val url = "${config.serverUrl.trim().removeSuffix("/")}/api/v1/books/$bookId/progression"
         val request = buildRequest(url, config).newBuilder()
@@ -291,6 +322,11 @@ class KomgaApiClient(
         val completed: Boolean? = null
     )
 
+    /**
+     * Envía página y finalización mediante PATCH, sin limitar ni convertir [page].
+     * Requiere la numeración de read-progress de Komga, no páginas visuales EPUB.
+     * Registra el resultado; devuelve fallos HTTP y excepciones de ejecución en Result.
+     */
     suspend fun updateReadProgress(
         config: ServerConfig,
         bookId: String,
@@ -319,6 +355,10 @@ class KomgaApiClient(
         }
     }
 
+    /**
+     * Marca como leído con PATCH; si [completed] es falso, elimina todo el progreso con DELETE.
+     * Devuelve fallo para HTTP no satisfactorio o IOException; otras excepciones se propagan.
+     */
     suspend fun setBookReadStatus(
         config: ServerConfig,
         bookId: String,
@@ -341,6 +381,7 @@ class KomgaApiClient(
         }
     }
 
+    /** Obtiene las páginas descritas por el servidor; devuelve fallos HTTP, de red o JSON en Result. */
     suspend fun getBookPages(config: ServerConfig, bookId: String): Result<List<BookPageDto>> = withContext(Dispatchers.IO) {
         val baseUrl = config.serverUrl.trim().removeSuffix("/")
         val url = "$baseUrl/api/v1/books/$bookId/pages"
@@ -360,6 +401,13 @@ class KomgaApiClient(
         }
     }
 
+    /**
+     * Descarga en E/S a un archivo hermano `.tmp` y después sustituye [destinationFile].
+     * Crea directorios padre; usa copia con sobrescritura si no puede renombrar y cierra los flujos.
+     * [onProgress] se ejecuta en E/S con bytes recibidos/longitud, solo si esta es positiva.
+     * Devuelve el destino o un fallo en Result; un fallo puede dejar el temporal o el destino parcial.
+     * Requiere una URL válida y una ruta escribible; no coordina descargas al mismo destino.
+     */
     suspend fun downloadBookFile(
         config: ServerConfig,
         bookId: String,
@@ -411,6 +459,7 @@ class KomgaApiClient(
         }
     }
 
+    /** Solicita borrar el archivo remoto del libro; devuelve éxito HTTP o fallo de ejecución en Result. */
     suspend fun deleteBookFile(config: ServerConfig, bookId: String): Result<Unit> = withContext(Dispatchers.IO) {
         val baseUrl = config.serverUrl.trim().removeSuffix("/")
         val url = "$baseUrl/api/v1/books/$bookId/file"
@@ -429,6 +478,7 @@ class KomgaApiClient(
         }
     }
 
+    /** Solicita borrar los archivos remotos de la serie; devuelve éxito HTTP o fallo de ejecución en Result. */
     suspend fun deleteSeriesFile(config: ServerConfig, seriesId: String): Result<Unit> = withContext(Dispatchers.IO) {
         val baseUrl = config.serverUrl.trim().removeSuffix("/")
         val url = "$baseUrl/api/v1/series/$seriesId/file"
@@ -447,6 +497,7 @@ class KomgaApiClient(
         }
     }
 
+    /** Solicita vaciar la papelera de la biblioteca en el servidor; devuelve éxito HTTP o fallo en Result. */
     suspend fun emptyTrash(config: ServerConfig, libraryId: String): Result<Unit> = withContext(Dispatchers.IO) {
         val baseUrl = config.serverUrl.trim().removeSuffix("/")
         val url = "$baseUrl/api/v1/libraries/$libraryId/empty-trash"
@@ -466,12 +517,15 @@ class KomgaApiClient(
     }
 
     companion object {
+        /** Forma la URL de miniatura sin autenticar ni codificar el ID; recorta espacios y una barra final. */
         fun getSeriesThumbnailUrl(serverUrl: String, seriesId: String): String =
             "${serverUrl.trim().removeSuffix("/")}/api/v1/series/$seriesId/thumbnail"
 
+        /** Forma la URL de portada sin autenticar ni codificar el ID; recorta espacios y una barra final. */
         fun getBookThumbnailUrl(serverUrl: String, bookId: String): String =
             "${serverUrl.trim().removeSuffix("/")}/api/v1/books/$bookId/thumbnail"
 
+        /** Forma la URL de imagen con [pageNumber] en la numeración del servidor, sin validarla ni autenticar. */
         fun getPageImageUrl(serverUrl: String, bookId: String, pageNumber: Int): String =
             "${serverUrl.trim().removeSuffix("/")}/api/v1/books/$bookId/pages/$pageNumber"
     }

@@ -47,6 +47,7 @@ enum class BookType {
     UNKNOWN
 }
 
+/** Deduce el lector por MIME o extensión, priorizando PDF y EPUB; usa COMIC si no reconoce el formato. */
 fun BookDto.detectBookType(): BookType {
     val type = media.mediaType.lowercase()
     val nameLower = name.lowercase()
@@ -59,6 +60,7 @@ fun BookDto.detectBookType(): BookType {
     }
 }
 
+/** Devuelve la etiqueta de formato por MIME o extensión, o LIBRO si no identifica PDF, EPUB, RAR o ZIP. */
 fun BookDto.formatBadge(): String {
     val type = media.mediaType.lowercase()
     val nameLower = name.lowercase()

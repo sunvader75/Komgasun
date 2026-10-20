@@ -7,12 +7,17 @@ enum class SeriesSortOrder(val label: String) {
     RANDOM("Aleatorio");
 
     companion object {
+        /** Resuelve el nombre sin distinguir mayúsculas; usa ALPHABETICAL si falta o no se reconoce. */
         fun fromName(name: String?): SeriesSortOrder {
             return entries.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: ALPHABETICAL
         }
     }
 }
 
+/**
+ * Devuelve una copia ordenada por título (o nombre si está vacío), sin distinguir mayúsculas,
+ * o barajada reproduciblemente con [randomSeed]; no modifica la lista original.
+ */
 fun List<SeriesDto>.sortedByOrder(order: SeriesSortOrder, randomSeed: Long = 0L): List<SeriesDto> {
     return when (order) {
         SeriesSortOrder.ALPHABETICAL -> {
@@ -26,6 +31,10 @@ fun List<SeriesDto>.sortedByOrder(order: SeriesSortOrder, randomSeed: Long = 0L)
     }
 }
 
+/**
+ * Ordena una copia por número de metadatos interpretable como Float, o por número positivo del libro.
+ * Sin número usa Float.MAX_VALUE; desempata por número del libro y nombre sin distinguir mayúsculas.
+ */
 fun List<BookDto>.sortedByNumbering(): List<BookDto> {
     return this.sortedWith(
         compareBy<BookDto> { book ->

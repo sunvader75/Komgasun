@@ -2,11 +2,11 @@ package com.sunvader.komgasun.data.model
 
 import kotlinx.serialization.Serializable
 
-/** Server-authoritative positions, not viewport-dependent physical pages. */
+/** Posiciones definidas por el servidor, no páginas físicas dependientes del área de lectura. */
 @Serializable
 data class EpubPositionsDto(val total: Int, val positions: List<EpubLocatorDto>)
 
-/** Komga's R2 progression API, not the Divina /read-progress page DTO. */
+/** Progreso de la API R2 de Komga, distinto del DTO de páginas de Divina /read-progress. */
 @Serializable
 data class EpubProgressionDto(val modified: String, val device: EpubDeviceDto, val locator: EpubLocatorDto)
 

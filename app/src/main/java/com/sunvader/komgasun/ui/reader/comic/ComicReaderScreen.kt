@@ -67,6 +67,7 @@ import com.sunvader.komgasun.R
 import com.sunvader.komgasun.data.remote.KomgaApiClient
 import com.sunvader.komgasun.ui.common.ErrorView
 import com.sunvader.komgasun.ui.common.LoadingView
+import com.sunvader.komgasun.ui.common.ReaderZoomState
 import com.sunvader.komgasun.ui.common.ZoomableBox
 import kotlinx.coroutines.launch
 
@@ -170,7 +171,8 @@ fun ComicReaderScreen(
                     pageCount = { pages.size }
                 )
                 var sliderValue by remember(state.initialPage) { mutableFloatStateOf(state.initialPage.toFloat()) }
-                var isCurrentPageZoomed by remember { mutableStateOf(false) }
+                val readerZoom = remember(bookId) { ReaderZoomState() }
+                val isCurrentPageZoomed = readerZoom.isScaled
                 var isMultiTouchActive by remember { mutableStateOf(false) }
 
                 LaunchedEffect(state.initialPage) {
@@ -182,7 +184,6 @@ fun ComicReaderScreen(
 
                 LaunchedEffect(pagerState.currentPage) {
                     sliderValue = pagerState.currentPage.toFloat()
-                    isCurrentPageZoomed = false
                     isMultiTouchActive = false
                     viewModel.onPageChanged(pagerState.currentPage, pages.size)
                 }
@@ -219,17 +220,12 @@ fun ComicReaderScreen(
                     val loaded = loadedPages[pageIndex]
                     ZoomableBox(
                         modifier = Modifier.fillMaxSize(),
-                        resetKey = pageIndex to pagerState.currentPage,
+                        zoomState = readerZoom,
                         onTap = viewModel::toggleControls,
                         onNavigate = { direction ->
                             val target = pagerState.currentPage + direction
                             if (target in 0 until pagerState.pageCount) {
                                 scope.launch { pagerState.scrollToPage(target) }
-                            }
-                        },
-                        onZoomChanged = { zoomed ->
-                            if (pageIndex == pagerState.currentPage) {
-                                isCurrentPageZoomed = zoomed
                             }
                         },
                         onMultiTouchChanged = { multiTouch ->

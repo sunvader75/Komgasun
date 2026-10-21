@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -26,7 +25,8 @@ import androidx.compose.ui.unit.IntSize
 /**
  * Pellizco entre [minScale] y [maxScale]; arrastre solo al ampliar.
  * A escala distinta de 1, los bordes navegan y el centro muestra los controles.
- * El multitáctil nunca se interpreta como tap. [resetKey] restablece la página.
+ * El multitáctil nunca se interpreta como tap. Un [zoomState] compartido conserva
+ * escala y posición entre páginas; sin él, [resetKey] restablece la página.
  */
 @Composable
 fun ZoomableBox(
@@ -38,6 +38,7 @@ fun ZoomableBox(
     onNavigate: ((Int) -> Unit)? = null,
     onZoomChanged: ((Boolean) -> Unit)? = null,
     onMultiTouchChanged: ((Boolean) -> Unit)? = null,
+    zoomState: ReaderZoomState = remember(resetKey) { ReaderZoomState() },
     content: @Composable () -> Unit
 ) {
     val currentTap by rememberUpdatedState(onTap)
@@ -45,14 +46,12 @@ fun ZoomableBox(
     val currentZoomChanged by rememberUpdatedState(onZoomChanged)
     val currentMultiTouchChanged by rememberUpdatedState(onMultiTouchChanged)
     var multiTouchGesture by remember { mutableStateOf(false) }
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
+    var scale by zoomState.scale
+    var offset by zoomState.offset
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
 
-    LaunchedEffect(resetKey) {
-        scale = 1f
-        offset = Offset.Zero
-        currentZoomChanged?.invoke(false)
+    LaunchedEffect(resetKey, zoomState) {
+        currentZoomChanged?.invoke(zoomState.isScaled)
         currentMultiTouchChanged?.invoke(false)
     }
 

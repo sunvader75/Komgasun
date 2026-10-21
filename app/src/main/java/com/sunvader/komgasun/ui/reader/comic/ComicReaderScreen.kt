@@ -174,7 +174,7 @@ fun ComicReaderScreen(
                 var isMultiTouchActive by remember { mutableStateOf(false) }
 
                 LaunchedEffect(state.initialPage) {
-                    if (state.initialPage in 0 until pages.size && pagerState.currentPage != state.initialPage) {
+                    if (state.initialPage in pages.indices && pagerState.currentPage != state.initialPage) {
                         pagerState.scrollToPage(state.initialPage)
                         sliderValue = state.initialPage.toFloat()
                     }
@@ -219,8 +219,14 @@ fun ComicReaderScreen(
                     val loaded = loadedPages[pageIndex]
                     ZoomableBox(
                         modifier = Modifier.fillMaxSize(),
-                        resetKey = pageIndex,
+                        resetKey = pageIndex to pagerState.currentPage,
                         onTap = viewModel::toggleControls,
+                        onNavigate = { direction ->
+                            val target = pagerState.currentPage + direction
+                            if (target in 0 until pagerState.pageCount) {
+                                scope.launch { pagerState.scrollToPage(target) }
+                            }
+                        },
                         onZoomChanged = { zoomed ->
                             if (pageIndex == pagerState.currentPage) {
                                 isCurrentPageZoomed = zoomed

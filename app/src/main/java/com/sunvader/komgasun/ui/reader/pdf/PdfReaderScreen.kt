@@ -1,6 +1,5 @@
 package com.sunvader.komgasun.ui.reader.pdf
 
-import android.app.Application
 import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -28,7 +27,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -255,8 +253,14 @@ fun PdfReaderScreen(
 
                                 ZoomableBox(
                                     modifier = Modifier.fillMaxSize(),
-                                    resetKey = pageIndex,
+                                    resetKey = pageIndex to pagerState.currentPage,
                                     onTap = viewModel::toggleControls,
+                                onNavigate = { direction ->
+                                    val target = pagerState.currentPage + direction
+                                    if (target in 0 until pagerState.pageCount) {
+                                        scope.launch { pagerState.scrollToPage(target) }
+                                    }
+                                },
                                     onZoomChanged = { zoomed ->
                                         if (pageIndex == pagerState.currentPage) {
                                             isCurrentPageZoomed = zoomed
@@ -297,8 +301,14 @@ fun PdfReaderScreen(
 
                                 ZoomableBox(
                                     modifier = Modifier.fillMaxSize(),
-                                    resetKey = pageIndex,
+                                    resetKey = pageIndex to pagerState.currentPage,
                                     onTap = viewModel::toggleControls,
+                                onNavigate = { direction ->
+                                    val target = pagerState.currentPage + direction
+                                    if (target in 0 until pagerState.pageCount) {
+                                        scope.launch { pagerState.scrollToPage(target) }
+                                    }
+                                },
                                     onZoomChanged = { zoomed ->
                                         if (pageIndex == pagerState.currentPage) {
                                             isCurrentPageZoomed = zoomed

@@ -37,7 +37,6 @@ import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.TextDecrease
 import androidx.compose.material.icons.filled.TextIncrease
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -75,7 +74,7 @@ import com.sunvader.komgasun.ui.reader.readerLoadStatus
  * al retirarlas. Sin mapa global muestra porcentaje, no un total ficticio; el índice navega por capítulos.
  * [onBack] se ejecuta al pulsar volver o tras borrado remoto satisfactorio, no ante un fallo de borrado.
  */
-@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun EpubReaderScreen(
     bookId: String,
@@ -103,7 +102,7 @@ fun EpubReaderScreen(
         mutableStateOf(false)
     }
 
-    var measuredChapters by remember(state.epubBook, state.fontSizeSp, state.useOriginalFonts) { mutableStateOf(0) }
+    var measuredChapters by remember(state.epubBook, state.fontSizeSp, state.useOriginalFonts) { androidx.compose.runtime.mutableIntStateOf(0) }
 
     if (showDeleteDialog) {
         AlertDialog(
@@ -231,13 +230,15 @@ fun EpubReaderScreen(
                             modifier = Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 16.dp)
                         )
 
+                        var pageTurnView by remember { mutableStateOf<EpubPageTurnView?>(null) }
+
                         // Left edge tap zone for previous page
                         Box(
                             modifier = Modifier
                                 .fillMaxHeight()
                                 .width(36.dp)
                                 .align(Alignment.CenterStart)
-                                .clickable { viewModel.movePage(-1) }
+                                .clickable { pageTurnView?.turn(-1) }
                         )
 
                         // Right edge tap zone for next page
@@ -246,14 +247,15 @@ fun EpubReaderScreen(
                                 .fillMaxHeight()
                                 .width(36.dp)
                                 .align(Alignment.CenterEnd)
-                                .clickable { viewModel.movePage(1) }
+                                .clickable { pageTurnView?.turn(1) }
                         )
 
                         // Inset outside the WebView so pagination uses the available reading area.
                         AndroidView(
                             factory = { ctx ->
-                                EpubWebView(ctx).apply {
-                                    onImageDiagnostics = { imageDiagnostics = it }
+                                EpubPageTurnView(ctx).apply {
+                                    pageTurnView = this
+                                    reader.onImageDiagnostics = { imageDiagnostics = it }
                                     onMove = viewModel::movePage
                                     onTap = viewModel::toggleControls
                                     onMeasured = viewModel::onPageMeasured

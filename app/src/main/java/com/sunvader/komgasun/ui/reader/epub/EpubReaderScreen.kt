@@ -250,7 +250,7 @@ fun EpubReaderScreen(
                                 .clickable { pageTurnView?.turn(1) }
                         )
 
-                        // Inset outside the WebView so pagination uses the available reading area.
+                        // The full paper includes reading margins; its WebViews keep the text inset.
                         AndroidView(
                             factory = { ctx ->
                                 EpubPageTurnView(ctx).apply {
@@ -263,9 +263,7 @@ fun EpubReaderScreen(
                             },
                             update = { it.render(state) },
                             onRelease = { it.dispose() },
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 40.dp, vertical = 16.dp)
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
 

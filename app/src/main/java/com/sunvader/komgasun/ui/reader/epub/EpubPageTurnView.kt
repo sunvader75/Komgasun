@@ -79,9 +79,18 @@ class EpubPageTurnView(context: Context) : FrameLayout(context) {
         preview.render(destination.copy(chapterGeneration = previewGeneration))
     }
 
+    private val readingInsets = EpubPageInsets(
+        (40 * resources.displayMetrics.density).roundToInt(),
+        (16 * resources.displayMetrics.density).roundToInt())
+    private fun viewport() = readingInsets.viewport(width, height)
+    private fun textLayoutParams() = LayoutParams(-1, -1).apply {
+        setMargins(readingInsets.horizontal, readingInsets.vertical,
+            readingInsets.horizontal, readingInsets.vertical)
+    }
+
     init {
-        addView(preview, LayoutParams(-1, -1))
-        addView(reader, LayoutParams(-1, -1))
+        addView(preview, textLayoutParams())
+        addView(reader, textLayoutParams())
         addView(paper, LayoutParams(-1, -1))
         paper.visibility = GONE
         preview.paginationPaused = true
@@ -103,12 +112,13 @@ class EpubPageTurnView(context: Context) : FrameLayout(context) {
     private fun identity(s: EpubReaderUiState) = listOf(s.epubBook, s.chapterGeneration,
         s.currentChapterIndex, s.proportion, s.page, s.pageCount,
         s.fontSizeSp, s.isDarkTheme, s.useOriginalFonts, width, height,
-        resources.displayMetrics.densityDpi)
+        resources.displayMetrics.densityDpi, readingInsets, viewport())
 
     private fun warm() {
         if (disposed) return
         val current = state
-        val valid = current != null && current.isReady && current.pageCount > 0 && width > 0 && height > 0
+        val valid = current != null && current.isReady && current.pageCount > 0 && reader.width > 0 && reader.height > 0 &&
+            !isLayoutRequested && !reader.isLayoutRequested && !preview.isLayoutRequested
         val key = if (valid) identity(current) else null
         // Invalidate pending visual callbacks before a new cache key starts loading.
         if (warmKey != key) {
@@ -145,6 +155,7 @@ class EpubPageTurnView(context: Context) : FrameLayout(context) {
                 it.isDarkTheme != value.isDarkTheme || it.useOriginalFonts != value.useOriginalFonts
         } == true) cancelTurn()
         state = value
+        setBackgroundColor(if (value.isDarkTheme) Color.rgb(18, 18, 18) else Color.WHITE)
         reader.render(value)
         warm()
     }
@@ -172,8 +183,15 @@ class EpubPageTurnView(context: Context) : FrameLayout(context) {
         return true
     }
 
-    private fun capture(view: View): Bitmap = createBitmap(width, height)
-        .also { view.draw(Canvas(it)) }
+    private fun capture(view: View): Bitmap = createBitmap(width, height).also {
+        val canvas = Canvas(it)
+        canvas.drawColor(if (state?.isDarkTheme == true) Color.rgb(18, 18, 18) else Color.WHITE)
+        canvas.save()
+        canvas.translate(view.left.toFloat(), view.top.toFloat())
+        canvas.clipRect(0, 0, view.width, view.height)
+        view.draw(canvas)
+        canvas.restore()
+    }
 
     private fun settle(complete: Boolean) {
         removeCallbacks(timeout)
@@ -214,7 +232,7 @@ class EpubPageTurnView(context: Context) : FrameLayout(context) {
                     prepare(if (dx < 0) 1 else -1)
                 }
                 if (source != null) {
-                    paper.progress = (-direction * dx / width).coerceIn(0f, 1f)
+                    paper.progress = (-direction * dx / reader.width.coerceAtLeast(1)).coerceIn(0f, 1f)
                     paper.invalidate()
                 }
             }
@@ -223,13 +241,13 @@ class EpubPageTurnView(context: Context) : FrameLayout(context) {
                 tracker?.computeCurrentVelocity(1000)
                 if (source != null) {
                     val complete = EpubPageTurn.complete(paper.progress,
-                        -direction * (tracker?.xVelocity ?: 0f) / width)
+                        -direction * (tracker?.xVelocity ?: 0f) / reader.width.coerceAtLeast(1))
                     released = complete
                     if (ready) settle(complete)
                     else if (!complete) cancelTurn()
                 } else if (abs(event.x - startX) < 24 * resources.displayMetrics.density &&
                     abs(event.y - startY) < 24 * resources.displayMetrics.density) {
-                    val step = EpubPageTurn.tapDirection(event.x / width.coerceAtLeast(1))
+                    val step = EpubPageTurn.tapDirection(viewport().tapFraction(event.x))
                     if (step == 0) onTap() else turn(step)
                     performClick()
                 }
@@ -248,6 +266,11 @@ class EpubPageTurnView(context: Context) : FrameLayout(context) {
         cancelTurn()
         warm()
     }
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        super.onLayout(changed, left, top, right, bottom)
+        warm()
+    }
+
     private fun cancelTurn() {
         ++revision
         source = null; target = null; committing = false; ready = false; released = null

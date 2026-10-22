@@ -9,8 +9,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipeLeft
-import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -29,7 +27,7 @@ class EpubWebViewTest {
     @Test fun rejectedNormalRasterRecoversWithoutNetwork() = exerciseReader(true)
 
     /**
-     * Monta un lector con un EPUB temporal para comprobar navegación, redistribución y aislamiento.
+     * Monta el transporte con un EPUB temporal para comprobar redistribución y aislamiento.
      * [induceFailure] fuerza un HTTP 403 para la imagen PNG y comprueba su recuperación mediante
      * URL Blob; si es falso comprueba la carga normal. El archivo se elimina al terminar y la
      * vista se libera mediante onRelease al retirarse de la composición.
@@ -71,30 +69,18 @@ class EpubWebViewTest {
                             val s = state.value
                             if (token == s.chapterGeneration) state.value = s.copy(page = page, pageCount = count, proportion = EpubPagination.proportion(page, count))
                         }
-                        view.onMove = { direction ->
-                            val s = state.value
-                            val p = EpubPagination.move(EpubPosition(s.currentChapterIndex, s.page), s.pageCount, 2, direction)
-                            state.value = if (p.chapter == s.currentChapterIndex) s.copy(page = p.page, proportion = EpubPagination.proportion(p.page, s.pageCount))
-                            else s.copy(currentChapterIndex = p.chapter, pageCount = 0, proportion = if (direction < 0) 1.0 else 0.0, chapterGeneration = s.chapterGeneration + 1)
-                        }
                     } }, update = { it.render(state.value) }, onRelease = { it.dispose() })
                 }
             }
             compose.waitUntil(10000) { state.value.pageCount > 1 }
-            compose.onNodeWithTag("reader").performTouchInput { swipeLeft() }
-            compose.waitUntil(5000) { state.value.page == 1 }
-            compose.onNodeWithTag("reader").performTouchInput { swipeRight() }
-            compose.waitUntil(5000) { state.value.page == 0 }
             compose.runOnIdle { state.value = state.value.copy(proportion = 1.0) }
             compose.waitUntil(5000) { state.value.page == state.value.pageCount - 1 }
-            compose.onNodeWithTag("reader").performTouchInput { swipeLeft() }
-            compose.waitUntil(5000) { state.value.currentChapterIndex == 1 && state.value.pageCount > 1 }
-            assertEquals(0, state.value.page)
-            compose.onNodeWithTag("reader").performTouchInput { swipeRight() }
-            compose.waitUntil(5000) { state.value.currentChapterIndex == 0 && state.value.pageCount > 1 && state.value.page == state.value.pageCount - 1 }
             compose.runOnIdle { state.value = state.value.copy(proportion = 0.5, fontSizeSp = 26); wide.value = true }
             compose.waitUntil(5000) { state.value.pageCount > 1 && kotlin.math.abs(state.value.proportion - 0.5) < 0.1 }
+            val beforeTouch = state.value
             compose.onNodeWithTag("reader").performTouchInput { swipeUp() }
+            compose.runOnIdle { assertEquals(beforeTouch, state.value) }
+            assertEquals("true", js(web, "window.getSelection().toString()===''"))
             assertEquals("true", js(web, "location.origin==='https://epub.invalid' && location.href===document.baseURI && location.search==='?generation='+" + state.value.chapterGeneration + " && !location.href.startsWith('chrome-error:')"))
             // Duplicate completion must preserve the current API and DOM, including while pending.
             assertEquals("true", js(web, "(window.__savedApi=window.__epub,window.__savedBody=document.body.firstChild,true)"))

@@ -11,13 +11,10 @@ import android.webkit.WebViewClient
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
-import kotlin.math.abs
 
 /** Transporte del archivo de solo lectura y denegación por defecto; no registra interfaz JavaScript nativa. */
 @SuppressLint("SetJavaScriptEnabled", "ViewConstructor")
 open class EpubWebView(context: Context) : WebView(context) {
-    var onMove: (Int) -> Unit = {}
-    var onTap: () -> Unit = {}
     var onMeasured: (Long, Int, Int) -> Unit = { _, _, _ -> }
     internal var onPaginationReady: ((Long, Int) -> Unit)? = null
     internal var paginationPaused = false
@@ -42,8 +39,6 @@ open class EpubWebView(context: Context) : WebView(context) {
     private var font = 18
     private var dark = true
     private var originalFonts = false
-    private var startX = 0f
-    private var startY = 0f
     private var evaluation = 0L
     private var callbackPending = false
     private val poll = object : Runnable {
@@ -63,6 +58,8 @@ open class EpubWebView(context: Context) : WebView(context) {
             allowFileAccess = false
             allowContentAccess = false
             domStorageEnabled = false
+            // Keep Web SQL disabled on older WebViews; newer engines no longer support it.
+            @Suppress("DEPRECATION")
             databaseEnabled = false
             javaScriptCanOpenWindowsAutomatically = false
             setSupportMultipleWindows(false)
@@ -73,7 +70,7 @@ open class EpubWebView(context: Context) : WebView(context) {
         isVerticalScrollBarEnabled = false
         isHorizontalScrollBarEnabled = false
         overScrollMode = OVER_SCROLL_NEVER
-        WebView.setWebContentsDebuggingEnabled(true)
+        setWebContentsDebuggingEnabled(true)
         webChromeClient = object : android.webkit.WebChromeClient() {
             override fun onConsoleMessage(message: android.webkit.ConsoleMessage?): Boolean {
                 android.util.Log.d("EpubConsole", "${message?.messageLevel()}: ${message?.message()} [${message?.sourceId()}:${message?.lineNumber()}]")
@@ -82,7 +79,7 @@ open class EpubWebView(context: Context) : WebView(context) {
         }
         webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?) = true
-            @Deprecated("Legacy WebView callback")
+            @Deprecated("Legacy WebView callback", ReplaceWith("true"))
             override fun shouldOverrideUrlLoading(view: WebView?, url: String?) = true
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest): WebResourceResponse =
                 resource(request.url, request.method, request.isForMainFrame)
@@ -345,30 +342,16 @@ open class EpubWebView(context: Context) : WebView(context) {
         }
     }
 
-    /** Traduce deslizamientos horizontales y toques laterales a navegación; consume enlaces y arrastre vertical. */
+    /** La superficie lectora navega; este transporte solo bloquea la interacción con la publicación. */
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { startX = event.x; startY = event.y }
-            MotionEvent.ACTION_UP -> {
-                val dx = event.x - startX
-                val dy = event.y - startY
-                val density = resources.displayMetrics.density
-                if (abs(dx) > 40 * density && abs(dx) > abs(dy)) {
-                    onMove(if (dx < 0) 1 else -1)
-                } else if (abs(dx) < 24 * density && abs(dy) < 24 * density) {
-                    val ratio = if (width > 0) event.x / width else 0.5f
-                    when {
-                        ratio < 0.22f -> onMove(-1)
-                        ratio > 0.78f -> onMove(1)
-                        else -> onTap()
-                    }
-                }
-                performClick()
-            }
-        }
-        return true // Never pass vertical dragging or publication link activation to WebView.
+        if (event.actionMasked == MotionEvent.ACTION_UP) performClick()
+        return true // Never activate publication links, selection or vertical scrolling in WebView.
     }
-    override fun performClick(): Boolean = super.performClick()
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
+    }
 
     /**
      * Libera en UI la WebView, cancela trabajador y sondeo y desconecta callbacks; no debe reutilizarse.
@@ -380,8 +363,6 @@ open class EpubWebView(context: Context) : WebView(context) {
         onImageDiagnostics = {}
         ++evaluation
         removeCallbacks(poll)
-        onMove = {}
-        onTap = {}
         onMeasured = { _, _, _ -> }
         onPaginationReady = null
         stopLoading()

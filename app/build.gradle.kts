@@ -87,3 +87,7 @@ dependencies {
   implementation(libs.androidx.datastore.preferences)
   implementation(libs.androidx.compose.material.icons.extended)
 }
+
+configurations.androidTestImplementation.configure {
+  dependencies.add(project.dependencies.platform(libs.androidx.compose.bom.get()))
+}

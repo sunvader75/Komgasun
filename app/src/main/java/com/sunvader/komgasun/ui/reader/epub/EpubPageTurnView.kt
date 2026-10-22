@@ -14,9 +14,6 @@ import android.webkit.WebView
 import android.widget.FrameLayout
 import kotlin.math.*
 import androidx.core.graphics.createBitmap
-import androidx.core.graphics.withTranslation
-import androidx.core.graphics.withClip
-import androidx.core.graphics.withSave
 
 /** Experimental paper surface. Only the live reader is connected to persisted progress. */
 class EpubPageTurnView(context: Context) : FrameLayout(context) {
@@ -112,7 +109,7 @@ class EpubPageTurnView(context: Context) : FrameLayout(context) {
         if (disposed) return
         val current = state
         val valid = current != null && current.isReady && current.pageCount > 0 && width > 0 && height > 0
-        val key = if (valid) identity(current!!) else null
+        val key = if (valid) identity(current) else null
         // Invalidate pending visual callbacks before a new cache key starts loading.
         if (warmKey != key) {
             warmKey = key
@@ -122,7 +119,7 @@ class EpubPageTurnView(context: Context) : FrameLayout(context) {
             preview.onPaginationReady = null
         }
         previews.update(key, if (valid) listOf(1, -1).filter {
-            EpubPageTurn.destination(current!!, current.epubBook?.chapters?.size ?: 0, it) != null
+            EpubPageTurn.destination(current, current.epubBook?.chapters?.size ?: 0, it) != null
         } else emptyList())
     }
     private var warmKey: Any? = null
@@ -269,7 +266,7 @@ class EpubPageTurnView(context: Context) : FrameLayout(context) {
         reader.dispose(); preview.dispose()
     }
 
-    /** A cylindrical fold, sampled into strips; the returned half carries a shaded paper back. */
+    /** One continuous, textured sheet; navigation and snapshot ownership remain outside it. */
     private class Paper(context: Context) : View(context) {
         var front: Bitmap? = null
         var back: Bitmap? = null
@@ -283,74 +280,31 @@ class EpubPageTurnView(context: Context) : FrameLayout(context) {
             Color.argb(90, 0, 0, 0), Color.TRANSPARENT, Shader.TileMode.CLAMP
         )
 
-        private fun project(x: Float, fold: Float, radius: Float): Float {
-            val distance = x - fold
-            return when {
-                distance <= 0 -> x
-                distance < Math.PI * radius -> fold + radius * sin(distance / radius)
-                else -> 2 * fold + Math.PI.toFloat() * radius - x
-            }
-        }
+        private val geometry = EpubCurlGeometry()
 
         override fun onDraw(canvas: Canvas) {
-            val image = front ?: return
-            back?.let { canvas.drawBitmap(it, 0f, 0f, null) }
-            canvas.withSave {
-                if (direction < 0) {
-                    translate(width.toFloat(), 0f); scale(-1f, 1f)
-                }
-                val radius = (width * 0.12f * sin(Math.PI * progress).toFloat()).coerceAtLeast(1f)
-                val fold = width * (1f - progress) - Math.PI.toFloat() * radius / 2f
-                if (progress > 0f && progress < 1f) {
-                    val edge = fold + radius
-                    val shadowWidth = width * 0.08f
-                    shadowMatrix.reset()
-                    shadowMatrix.setScale(shadowWidth, 1f)
-                    shadowMatrix.postTranslate(edge, 0f)
-                    shadowShader.setLocalMatrix(shadowMatrix)
-                    paint.shader = shadowShader
-                    drawRect(edge, 0f, edge + shadowWidth, height.toFloat(), paint)
-                    paint.shader = null
-                }
-                // Draw strips in source order so the folded-over paper covers the flat part.
-                val strips = 80
-                for (i in 0 until strips) {
-                    val x0 = width * i.toFloat() / strips
-                    val x1 = width * (i + 1f) / strips
-                    val a = project(x0, fold, radius)
-                    val b = project(x1, fold, radius)
-                    val theta = ((x0 + x1) / 2 - fold).coerceAtLeast(0f) / radius
-                    val rear = theta > Math.PI / 2
-                    val sourceX = if (direction > 0) x0 else width - x1
-                    val stripLeft = sourceX.toInt()
-                    val stripRight = (sourceX + width.toFloat() / strips).roundToInt().coerceAtMost(width)
-                    val stripWidth = (stripRight - stripLeft).coerceAtLeast(1)
-                    // Sample the cylindrical surface without per-frame bitmap allocation.
-                    withClip(min(a, b), 0f, max(a, b), height.toFloat()) {
-                        if (rear) {
-                            paint.color =
-                                if (dark) Color.rgb(45, 45, 45) else Color.rgb(232, 226, 213)
-                            drawRect(min(a, b), 0f, max(a, b), height.toFloat(), paint)
-                        } else {
-                            withTranslation(if (direction > 0) a else b, 0f) {
-                                scale(
-                                    (if (direction > 0) b - a else a - b) / stripWidth,
-                                    1f
-                                )
-                                translate(-stripLeft.toFloat(), 0f)
-                                drawBitmap(image, 0f, 0f, null)
-                            }
-                        }
-                        paint.color = Color.argb(
-                            (65 * abs(sin(theta.coerceAtMost(Math.PI.toFloat())))).toInt(),
-                            0,
-                            0,
-                            0
-                        )
-                        drawRect(min(a, b), 0f, max(a, b), height.toFloat(), paint)
-                    }
-                }
+            val current = front ?: return
+            val destination = back ?: return
+            // Exact endpoint bitmaps avoid any residual mesh/shadow on completion or rollback.
+            if (progress <= 0f || progress >= 1f) {
+                canvas.drawBitmap(if (progress <= 0f) current else destination, 0f, 0f, null)
+                return
             }
+            val sheet = if (direction > 0) current else destination
+            val underneath = if (direction > 0) destination else current
+            canvas.drawBitmap(underneath, 0f, 0f, null)
+            geometry.update(width.toFloat(), height.toFloat(), progress, direction, dark)
+            val shadowWidth = width * (.015f + .065f * geometry.lift)
+            shadowMatrix.setScale(shadowWidth, 1f)
+            shadowMatrix.postTranslate(geometry.edge, 0f)
+            shadowShader.setLocalMatrix(shadowMatrix)
+            paint.shader = shadowShader
+            paint.alpha = (255 * geometry.lift * if (dark) .6f else 1f).toInt()
+            canvas.drawRect(geometry.edge, 0f, geometry.edge + shadowWidth, height.toFloat(), paint)
+            paint.shader = null
+            paint.alpha = 255
+            canvas.drawBitmapMesh(sheet, EpubCurlGeometry.COLUMNS, EpubCurlGeometry.ROWS,
+                geometry.vertices, 0, geometry.colors, 0, paint)
         }
     }
 }

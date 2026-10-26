@@ -65,19 +65,29 @@ object EpubHtml {
             }
           });
           let pendingStyles=0;
-          parsed.querySelectorAll('link').forEach(e=>{
-            pendingStyles++;
-            const done=()=>{pendingStyles--;e.removeEventListener('load',done);e.removeEventListener('error',done);};
-            e.addEventListener('load',done);e.addEventListener('error',done);
-          });
+          const attachStyle=e=>{
+            if(e.tagName==='LINK'){
+              let url;try{if(e.getAttribute('href'))url=new URL(e.getAttribute('href'),trustedBase);}catch(_){}
+              if(!url || url.protocol!=='https:' || url.origin!=='https://epub.invalid' || url.search || url.hash){e.remove();return;}
+              const link=document.createElement('link');
+              link.rel='stylesheet';
+              link.href=url.href;
+              pendingStyles++;
+              const done=()=>{pendingStyles--;link.removeEventListener('load',done);link.removeEventListener('error',done);};
+              link.addEventListener('load',done);link.addEventListener('error',done);
+              document.head.append(link);
+            } else if(e.tagName==='STYLE'){
+              document.head.append(e);
+            }
+          };
           // Keep publisher body font selectors and inline family without adopting layout styles.
           document.documentElement.style.fontFamily='serif';
           document.body.className=parsed.body.className;
           document.body.style.fontFamily=parsed.body.style.fontFamily;
           const viewport=document.createElement('div'), pages=document.createElement('div');
           document.body.replaceChildren(viewport); viewport.append(pages);
-          Array.from(parsed.head.children).forEach(e=>{if(['STYLE','LINK'].includes(e.tagName))pages.append(e);});
-          Array.from(parsed.body.childNodes).forEach(e=>pages.append(e));
+          Array.from(parsed.head.children).forEach(e=>{if(['STYLE','LINK'].includes(e.tagName))attachStyle(e);});
+          Array.from(parsed.body.childNodes).forEach(e=>{if(['STYLE','LINK'].includes(e.tagName))attachStyle(e);else pages.append(e);});
           const css=document.createElement('style'); css.textContent=`
             html,body {width:100%!important;height:100%!important;margin:0!important;padding:0!important;overflow:hidden!important;}
             * {box-sizing:border-box;max-width:100%!important;position:static!important;float:none!important;transform:none!important;}

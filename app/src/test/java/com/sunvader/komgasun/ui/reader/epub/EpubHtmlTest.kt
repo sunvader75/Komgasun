@@ -45,5 +45,11 @@ class EpubHtmlTest {
         val bootstrap = EpubHtml.install("\"<svg></svg>\"")
         assertFalse(bootstrap.contains("p==='..'"))
     }
+    @Test fun stylesheetLinksNormalizeAgainstTrustedBaseAndPrecedeReaderOverrides() {
+        val bootstrap = EpubHtml.install("\"<link rel='stylesheet' href='../styles/book.css'>\"", "[]", "\"https://epub.invalid/OEBPS/Text/ch1.xhtml\"")
+        assertTrue(bootstrap.contains("new URL(e.getAttribute('href'),trustedBase)"))
+        assertTrue(bootstrap.contains("link.href=url.href"))
+        assertTrue(bootstrap.indexOf("if(['STYLE','LINK'].includes(e.tagName))attachStyle(e)") < bootstrap.indexOf("document.head.append(css)"))
+    }
 }
 

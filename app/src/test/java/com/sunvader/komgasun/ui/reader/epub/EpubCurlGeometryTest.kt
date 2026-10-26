@@ -40,6 +40,6 @@ class EpubCurlGeometryTest {
         mesh.update(1000f, 1600f, .5f, 1, false)
         val middle = EpubCurlGeometry.COLUMNS / 2 * 2
         assertTrue(kotlin.math.abs(vertices[middle] - (vertices[0] + vertices[EpubCurlGeometry.COLUMNS * 2]) / 2) > 1f)
-        assertTrue(vertices[EpubCurlGeometry.COLUMNS * 2 + 1] < 0f)
+        assertEquals(0f, vertices[EpubCurlGeometry.COLUMNS * 2 + 1], 0f)
     }
 }

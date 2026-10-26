@@ -39,7 +39,7 @@ internal class EpubCurlGeometry {
             for (row in 0..ROWS) {
                 val index = row * (COLUMNS + 1) + column
                 vertices[index * 2] = x
-                vertices[index * 2 + 1] = height * .5f + (height * row / ROWS - height * .5f) * perspective
+                vertices[index * 2 + 1] = height * row / ROWS
                 colors[index] = color
             }
         }

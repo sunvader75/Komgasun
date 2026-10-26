@@ -18,6 +18,8 @@ open class EpubWebView(context: Context) : WebView(context) {
     var onMeasured: (Long, Int, Int) -> Unit = { _, _, _ -> }
     internal var onPaginationReady: ((Long, Int) -> Unit)? = null
     internal var paginationPaused = false
+    internal var isSettled = false
+        private set
     var onImageDiagnostics: (String) -> Unit = {}
     private var recovery = EpubImageRecovery(Long.MIN_VALUE)
     private val imageWorker = java.util.concurrent.ThreadPoolExecutor(
@@ -121,6 +123,7 @@ open class EpubWebView(context: Context) : WebView(context) {
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 android.util.Log.d("EpubDebug", "onPageStarted: url=$url")
                 installed = false
+                isSettled = false
                 evaluation++
                 callbackPending = false
                 imagePending = false
@@ -209,6 +212,7 @@ open class EpubWebView(context: Context) : WebView(context) {
             evaluation++
             callbackPending = false
             installed = false
+            isSettled = false
             book = state.epubBook
             chapterPath = chapter.resourcePath ?: return
             stopLoading()
@@ -236,16 +240,14 @@ open class EpubWebView(context: Context) : WebView(context) {
         val capturedWidth = width
         val capturedHeight = height
         val measuringBook = onPaginationReady != null
-        val script = if (measuringBook)
-            "(function(){const r=window.__epub.apply($fraction,$font,$dark,$originalFonts);return [r[0],r[1],window.__epub.settled()];})()"
-        else "window.__epub.apply($fraction,$font,$dark,$originalFonts)"
+        val script = "(function(){const r=window.__epub.apply($fraction,$font,$dark,$originalFonts);return [r[0],r[1],window.__epub.settled()];})()"
         evaluateJavascript(script) { result ->
             android.util.Log.d("EpubDebug", "apply($fraction,$font,$dark,$originalFonts) result=$result (w=$width, h=$height)")
             if (disposed || token != captured || serial != evaluation) return@evaluateJavascript
             callbackPending = false
             try {
                 val values = JSONArray(result)
-                if (values.length() != if (measuringBook) 3 else 2) return@evaluateJavascript
+                if (values.length() != 3) return@evaluateJavascript
                 val page = values.getDouble(0)
                 val count = values.getDouble(1)
                 if (!page.isFinite() || !count.isFinite() || page % 1.0 != 0.0 || count % 1.0 != 0.0 ||
@@ -256,10 +258,11 @@ open class EpubWebView(context: Context) : WebView(context) {
                     measurePage()
                     return@evaluateJavascript
                 }
+                isSettled = values.getBoolean(2)
                 onMeasured(captured, page.toInt(), count.toInt())
                 // CSS, images and fonts have settled; scrollWidth already forced layout.
                 // No arbitrary per-chapter delay is needed for this derived count.
-                if (measuringBook && values.getBoolean(2)) {
+                if (measuringBook && isSettled) {
                     onPaginationReady?.invoke(captured, count.toInt())
                 }
             } catch (_: Exception) { /* Ignore malformed/stale callbacks, never persist them. */ }

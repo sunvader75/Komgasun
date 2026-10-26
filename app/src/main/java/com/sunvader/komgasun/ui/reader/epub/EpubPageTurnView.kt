@@ -69,11 +69,18 @@ class EpubPageTurnView(context: Context) : FrameLayout(context) {
                 preview.postVisualStateCallback(ticket, object : WebView.VisualStateCallback() {
                     override fun onComplete(requestId: Long) {
                         if (ticket != loadRevision || disposed) return
-                        removeCallbacks(warmTimeout)
-                        done(capture(preview))
-                        showPrepared()
+                        preview.postVisualStateCallback(ticket + 100_000_000L, object : WebView.VisualStateCallback() {
+                            override fun onComplete(secondId: Long) {
+                                if (ticket != loadRevision || disposed) return
+                                removeCallbacks(warmTimeout)
+                                done(capture(preview))
+                                showPrepared()
+                            }
+                        })
+                        preview.invalidate()
                     }
                 })
+                preview.invalidate()
             }
         }
         preview.render(destination.copy(chapterGeneration = previewGeneration))
@@ -118,7 +125,7 @@ class EpubPageTurnView(context: Context) : FrameLayout(context) {
         if (disposed) return
         val current = state
         val valid = current != null && current.isReady && current.pageCount > 0 && reader.width > 0 && reader.height > 0 &&
-            !isLayoutRequested && !reader.isLayoutRequested && !preview.isLayoutRequested
+            !isLayoutRequested && !reader.isLayoutRequested && !preview.isLayoutRequested && reader.isSettled
         val key = if (valid) identity(current) else null
         // Invalidate pending visual callbacks before a new cache key starts loading.
         if (warmKey != key) {

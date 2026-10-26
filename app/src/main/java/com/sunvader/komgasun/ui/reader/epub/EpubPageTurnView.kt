@@ -14,6 +14,7 @@ import android.webkit.WebView
 import android.widget.FrameLayout
 import kotlin.math.*
 import androidx.core.graphics.createBitmap
+import androidx.core.graphics.withTranslation
 
 /** Experimental paper surface. Only the live reader is connected to persisted progress. */
 class EpubPageTurnView(context: Context) : FrameLayout(context) {
@@ -186,11 +187,10 @@ class EpubPageTurnView(context: Context) : FrameLayout(context) {
     private fun capture(view: View): Bitmap = createBitmap(width, height).also {
         val canvas = Canvas(it)
         canvas.drawColor(if (state?.isDarkTheme == true) Color.rgb(18, 18, 18) else Color.WHITE)
-        canvas.save()
-        canvas.translate(view.left.toFloat(), view.top.toFloat())
-        canvas.clipRect(0, 0, view.width, view.height)
-        view.draw(canvas)
-        canvas.restore()
+        canvas.withTranslation(view.left.toFloat(), view.top.toFloat()) {
+            clipRect(0, 0, view.width, view.height)
+            view.draw(this)
+        }
     }
 
     private fun settle(complete: Boolean) {
@@ -304,18 +304,21 @@ class EpubPageTurnView(context: Context) : FrameLayout(context) {
         )
 
         private val geometry = EpubCurlGeometry()
+        private val pageBounds = Rect()
 
         override fun onDraw(canvas: Canvas) {
             val current = front ?: return
             val destination = back ?: return
+            // Captures and mesh vertices use view pixels, independent of bitmap/canvas density.
+            pageBounds.set(0, 0, width, height)
             // Exact endpoint bitmaps avoid any residual mesh/shadow on completion or rollback.
             if (progress <= 0f || progress >= 1f) {
-                canvas.drawBitmap(if (progress <= 0f) current else destination, 0f, 0f, null)
+                canvas.drawBitmap(if (progress <= 0f) current else destination, null, pageBounds, null)
                 return
             }
             val sheet = if (direction > 0) current else destination
             val underneath = if (direction > 0) destination else current
-            canvas.drawBitmap(underneath, 0f, 0f, null)
+            canvas.drawBitmap(underneath, null, pageBounds, null)
             geometry.update(width.toFloat(), height.toFloat(), progress, direction, dark)
             val shadowWidth = width * (.015f + .065f * geometry.lift)
             shadowMatrix.setScale(shadowWidth, 1f)

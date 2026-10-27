@@ -9,6 +9,8 @@ import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,8 +31,17 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 
+internal val LocalReaderFitScale = staticCompositionLocalOf<androidx.compose.runtime.MutableState<Float>?> { null }
+
+/** Conserva el mínimo habitual salvo que la página necesite reducirse más para entrar completa. */
+internal fun readerMinimumScale(minScale: Float, fitScale: Float): Float =
+    if (fitScale.isFinite() && fitScale > 0f) minOf(minScale, fitScale) else minScale
+
+internal val LocalReaderPageReduction = staticCompositionLocalOf { 1f }
+
 /**
- * Pellizco entre [minScale] y [maxScale]; arrastre con inercia solo al ampliar.
+ * Pellizco hasta [maxScale]; el mínimo baja de [minScale] si hace falta para ver la página completa.
+ * Arrastre con inercia solo al ampliar.
  * A escala distinta de 1, los bordes navegan y el centro muestra los controles.
  * El multitáctil nunca se interpreta como tap. Un [zoomState] compartido conserva
  * escala y posición entre páginas; sin él, [resetKey] restablece la página.
@@ -53,6 +64,8 @@ fun ZoomableBox(
     val currentZoomChanged by rememberUpdatedState(onZoomChanged)
     val currentMultiTouchChanged by rememberUpdatedState(onMultiTouchChanged)
     var multiTouchGesture by remember { mutableStateOf(false) }
+    val pageFitScale = remember(resetKey) { mutableStateOf(1f) }
+    val effectiveMinScale by rememberUpdatedState(readerMinimumScale(minScale, pageFitScale.value))
     var scale by zoomState.scale
     var offset by zoomState.offset
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
@@ -105,7 +118,7 @@ fun ZoomableBox(
                             offset = Offset.Zero
                             currentZoomChanged?.invoke(false)
                         } else {
-                            val targetScale = 2.5f.coerceIn(minScale, maxScale)
+                            val targetScale = 2.5f.coerceIn(effectiveMinScale, maxScale)
                             if (boxSize.width > 0 && boxSize.height > 0) {
                                 val center = Offset(boxSize.width / 2f, boxSize.height / 2f)
                                 val maxOffsetX = (boxSize.width * (targetScale - 1f)) / 2f
@@ -147,7 +160,7 @@ fun ZoomableBox(
                             val zoomChange = event.calculateZoom()
                             val panChange = event.calculatePan()
 
-                            val newScale = (scale * zoomChange).coerceIn(minScale, maxScale)
+                            val newScale = (scale * zoomChange).coerceIn(effectiveMinScale, maxScale)
                             scale = newScale
                             val isZoomed = isReaderScaled(scale)
                             currentZoomChanged?.invoke(isZoomed)
@@ -212,16 +225,23 @@ fun ZoomableBox(
             },
         contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier.graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-                translationX = offset.x
-                translationY = offset.y
-            },
-            contentAlignment = Alignment.Center
+        // En apaisado la reducción ocurre en la página, antes del recorte del scroll.
+        val reducePage = boxSize.width > boxSize.height && scale < 1f
+        CompositionLocalProvider(
+            LocalReaderPageReduction provides if (reducePage) scale else 1f,
+            LocalReaderFitScale provides pageFitScale
         ) {
-            content()
+            Box(
+                modifier = Modifier.graphicsLayer {
+                    scaleX = if (reducePage) 1f else scale
+                    scaleY = if (reducePage) 1f else scale
+                    translationX = offset.x
+                    translationY = offset.y
+                },
+                contentAlignment = Alignment.Center
+            ) {
+                content()
+            }
         }
     }
 }

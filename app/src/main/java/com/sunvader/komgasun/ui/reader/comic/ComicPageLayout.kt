@@ -6,7 +6,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.SideEffect
+import com.sunvader.komgasun.ui.common.LocalReaderFitScale
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import com.sunvader.komgasun.ui.common.LocalReaderPageReduction
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.SubcomposeAsyncImageContent
@@ -17,25 +21,31 @@ import coil.compose.SubcomposeAsyncImageScope
  * En horizontal usa todo el ancho; en vertical limita la altura al área visible.
  * Si las dimensiones de imagen no son finitas o positivas devuelve [height].
  */
-internal fun comicPageHeight(width: Float, height: Float, imageWidth: Float, imageHeight: Float): Float {
+internal fun comicPageHeight(width: Float, height: Float, imageWidth: Float, imageHeight: Float, reduction: Float = 1f): Float {
     if (!imageWidth.isFinite() || !imageHeight.isFinite() || imageWidth <= 0f || imageHeight <= 0f) return height
     val fittedHeight = width * (imageHeight / imageWidth)
-    return if (width > height) fittedHeight else minOf(height, fittedHeight)
+    return if (width > height) fittedHeight * reduction else minOf(height, fittedHeight)
 }
 
 /** Muestra una imagen ya cargada, ajustada al ancho y desplazable en horizontal si [scrollEnabled]; en vertical conserva el ajuste al área visible. */
 @Composable
 internal fun SubcomposeAsyncImageScope.ComicPageContent(scrollEnabled: Boolean) {
     val imageSize = painter.intrinsicSize
+    val fitScale = LocalReaderFitScale.current
+    val reduction = LocalReaderPageReduction.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
+        // Usar la altura sin reducir evita que el límite dependa del zoom actual.
+        val fullPageHeight = comicPageHeight(maxWidth.value, maxHeight.value, imageSize.width, imageSize.height)
+        SideEffect { fitScale?.value = maxHeight.value / fullPageHeight }
         if (maxWidth > maxHeight) {
             // Solo las imágenes cargadas reciben espacio vertical sin límite; carga y error ocupan el área visible.
-            val pageHeight = comicPageHeight(maxWidth.value, maxHeight.value, imageSize.width, imageSize.height)
+            val pageHeight = comicPageHeight(maxWidth.value, maxHeight.value, imageSize.width, imageSize.height, reduction)
             androidx.compose.foundation.layout.Box(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState(), enabled = scrollEnabled)
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState(), enabled = scrollEnabled),
+                contentAlignment = Alignment.TopCenter
             ) {
                 this@ComicPageContent.SubcomposeAsyncImageContent(
-                    modifier = Modifier.fillMaxWidth().height(androidx.compose.ui.unit.Dp(pageHeight)),
+                    modifier = Modifier.fillMaxWidth(reduction).height(androidx.compose.ui.unit.Dp(pageHeight)),
                     contentScale = ContentScale.Fit
                 )
             }

@@ -4,6 +4,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ComicPageLayoutTest {
+    @Test fun reductionScalesTheWholeLandscapePage() {
+        assertEquals(800f, comicPageHeight(1200f, 600f, 900f, 1200f, 0.5f), 0.01f)
+    }
+
     @Test fun landscapeFitsWidthWithoutShrinkingTallPages() {
         assertEquals(1600f, comicPageHeight(1200f, 600f, 900f, 1200f), 0.01f)
     }

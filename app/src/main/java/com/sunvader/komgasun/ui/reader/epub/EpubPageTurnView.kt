@@ -14,6 +14,7 @@ import android.webkit.WebView
 import android.widget.FrameLayout
 import kotlin.math.*
 import androidx.core.graphics.createBitmap
+import androidx.core.graphics.withTranslation
 
 /** Experimental paper surface. Only the live reader is connected to persisted progress. */
 class EpubPageTurnView(context: Context) : FrameLayout(context) {
@@ -193,11 +194,10 @@ class EpubPageTurnView(context: Context) : FrameLayout(context) {
     private fun capture(view: View): Bitmap = createBitmap(width, height).also {
         val canvas = Canvas(it)
         canvas.drawColor(if (state?.isDarkTheme == true) Color.rgb(18, 18, 18) else Color.WHITE)
-        canvas.save()
-        canvas.translate(view.left.toFloat(), view.top.toFloat())
-        canvas.clipRect(0, 0, view.width, view.height)
-        view.draw(canvas)
-        canvas.restore()
+        canvas.withTranslation(view.left.toFloat(), view.top.toFloat()) {
+            clipRect(0, 0, view.width, view.height)
+            view.draw(this)
+        }
     }
 
     private fun settle(complete: Boolean) {

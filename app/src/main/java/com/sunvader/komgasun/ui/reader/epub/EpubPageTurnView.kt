@@ -99,6 +99,11 @@ class EpubPageTurnView(context: Context) : FrameLayout(context) {
     init {
         addView(preview, textLayoutParams())
         addView(reader, textLayoutParams())
+        // capture() draws WebViews through Chromium's software path, whose vertical text layout
+        // differs from the GPU compositor (~1.8% line pitch). Rendering the live and preview
+        // WebViews through the same path keeps snapshots identical to the page left on screen.
+        reader.setLayerType(LAYER_TYPE_SOFTWARE, null)
+        preview.setLayerType(LAYER_TYPE_SOFTWARE, null)
         addView(paper, LayoutParams(-1, -1))
         paper.visibility = GONE
         preview.paginationPaused = true

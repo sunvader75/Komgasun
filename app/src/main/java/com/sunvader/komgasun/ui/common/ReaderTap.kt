@@ -7,6 +7,25 @@ import kotlin.math.abs
 
 internal fun isReaderScaled(scale: Float): Boolean = abs(scale - 1f) > 0.01f
 
+/** Keeps a scaled page reachable while allowing one-finger movement in either zoom direction. */
+internal fun readerPanOffset(
+    offset: Offset,
+    pan: Offset,
+    scale: Float,
+    width: Float,
+    height: Float
+): Offset {
+    if (!isReaderScaled(scale)) return Offset.Zero
+    val bounds = readerPanBounds(scale, width, height)
+    return Offset(
+        (offset.x + pan.x).coerceIn(-bounds.x, bounds.x),
+        (offset.y + pan.y).coerceIn(-bounds.y, bounds.y)
+    )
+}
+
+internal fun readerPanBounds(scale: Float, width: Float, height: Float): Offset =
+    Offset(width * abs(scale - 1f) / 2f, height * abs(scale - 1f) / 2f)
+
 /** Only scaled pages use the outer 15 percent for page navigation. */
 internal fun readerTapDirection(scale: Float, horizontalFraction: Float): Int = when {
     !isReaderScaled(scale) -> 0

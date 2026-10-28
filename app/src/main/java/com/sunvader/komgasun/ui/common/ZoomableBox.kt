@@ -14,6 +14,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -41,9 +42,9 @@ internal val LocalReaderPageReduction = staticCompositionLocalOf { 1f }
 
 /**
  * Pellizco hasta [maxScale]; el mínimo baja de [minScale] si hace falta para ver la página completa.
- * Arrastre con inercia solo al ampliar.
+ * Arrastre con inercia tanto al ampliar como al reducir.
  * A escala distinta de 1, los bordes navegan y el centro muestra los controles.
- * El multitáctil nunca se interpreta como tap. Un [zoomState] compartido conserva
+ * El multitáctil nunca se interpreta como tap. Un [zoomState] compartido conserva la
  * escala y posición entre páginas; sin él, [resetKey] restablece la página.
  */
 @Composable
@@ -64,8 +65,8 @@ fun ZoomableBox(
     val currentZoomChanged by rememberUpdatedState(onZoomChanged)
     val currentMultiTouchChanged by rememberUpdatedState(onMultiTouchChanged)
     var multiTouchGesture by remember { mutableStateOf(false) }
-    val pageFitScale = remember(resetKey) { mutableStateOf(1f) }
-    val effectiveMinScale by rememberUpdatedState(readerMinimumScale(minScale, pageFitScale.value))
+    val pageFitScale = remember(resetKey) { mutableFloatStateOf(1f) }
+    val effectiveMinScale by rememberUpdatedState(readerMinimumScale(minScale, pageFitScale.floatValue))
     var scale by zoomState.scale
     var offset by zoomState.offset
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
@@ -84,7 +85,7 @@ fun ZoomableBox(
     Box(
         modifier = modifier
             .onSizeChanged { boxSize = it }
-            // Intercept multi-touch early in Initial pass to disable parent scroll immediately
+            // Intercept multitouch early in Initial pass to disable parent scroll immediately
             .pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -165,29 +166,25 @@ fun ZoomableBox(
                             val isZoomed = isReaderScaled(scale)
                             currentZoomChanged?.invoke(isZoomed)
 
-                            if (scale > 1f && boxSize.width > 0 && boxSize.height > 0) {
-                                val maxOffsetX = (boxSize.width * (scale - 1f)) / 2f
-                                val maxOffsetY = (boxSize.height * (scale - 1f)) / 2f
-                                offset = Offset(
-                                    x = (offset.x + panChange.x).coerceIn(-maxOffsetX, maxOffsetX),
-                                    y = (offset.y + panChange.y).coerceIn(-maxOffsetY, maxOffsetY)
+                            offset = if (isReaderScaled(scale) && boxSize.width > 0 && boxSize.height > 0) {
+                                readerPanOffset(
+                                    offset, panChange, scale,
+                                    boxSize.width.toFloat(), boxSize.height.toFloat()
                                 )
                             } else {
-                                offset = Offset.Zero
+                                Offset.Zero
                             }
                             event.changes.forEach { it.consume() }
-                        } else if (pressedPointers == 1 && scale > 1f) {
-                            // One finger while zoomed in: pan around without paging
+                        } else if (pressedPointers == 1 && isReaderScaled(scale)) {
+                            // One finger at either scaled size: pan around without paging
                             val panChange = event.calculatePan()
                             drag += panChange
                             if (drag.getDistance() > viewConfiguration.touchSlop) dragging = true
                             if (!dragging) continue
                             if (boxSize.width > 0 && boxSize.height > 0) {
-                                val maxOffsetX = (boxSize.width * (scale - 1f)) / 2f
-                                val maxOffsetY = (boxSize.height * (scale - 1f)) / 2f
-                                offset = Offset(
-                                    x = (offset.x + panChange.x).coerceIn(-maxOffsetX, maxOffsetX),
-                                    y = (offset.y + panChange.y).coerceIn(-maxOffsetY, maxOffsetY)
+                                offset = readerPanOffset(
+                                    offset, panChange, scale,
+                                    boxSize.width.toFloat(), boxSize.height.toFloat()
                                 )
                             }
                             event.changes.forEach { it.consume() }
@@ -195,17 +192,16 @@ fun ZoomableBox(
                         // At normal size, leave one-finger drags to the pager; reduced pages disable it.
                     } while (event.changes.any { it.pressed })
 
-                    if (dragging && !hadMultiTouch && scale > 1f &&
+                    if (dragging && !hadMultiTouch && isReaderScaled(scale) &&
                         boxSize.width > 0 && boxSize.height > 0
                     ) {
                         val velocity = velocityTracker.calculateVelocity()
-                        val maxOffsetX = boxSize.width * (scale - 1f) / 2f
-                        val maxOffsetY = boxSize.height * (scale - 1f) / 2f
+                        val bounds = readerPanBounds(scale, boxSize.width.toFloat(), boxSize.height.toFloat())
                         flingJob = motionScope.launch {
                             val motion = Animatable(offset, Offset.VectorConverter)
                             motion.updateBounds(
-                                lowerBound = Offset(-maxOffsetX, -maxOffsetY),
-                                upperBound = Offset(maxOffsetX, maxOffsetY)
+                                lowerBound = -bounds,
+                                upperBound = bounds
                             )
                             motion.animateDecay(
                                 initialVelocity = Offset(velocity.x, velocity.y),

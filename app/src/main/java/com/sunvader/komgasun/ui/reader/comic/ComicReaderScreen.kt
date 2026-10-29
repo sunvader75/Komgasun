@@ -173,6 +173,7 @@ fun ComicReaderScreen(
                 var sliderValue by remember(state.initialPage) { mutableFloatStateOf(state.initialPage.toFloat()) }
                 val readerZoom = remember(bookId) { ReaderZoomState() }
                 val isCurrentPageZoomed = readerZoom.isScaled
+                var restartPage by remember(bookId) { mutableStateOf<Int?>(null) }
                 var isMultiTouchActive by remember { mutableStateOf(false) }
 
                 LaunchedEffect(state.initialPage) {
@@ -225,7 +226,10 @@ fun ComicReaderScreen(
                         onNavigate = { direction ->
                             val target = pagerState.currentPage + direction
                             if (target in 0 until pagerState.pageCount) {
-                                scope.launch { pagerState.scrollToPage(target) }
+                                scope.launch {
+                                    restartPage = if (readerZoom.scale.floatValue > 1f) target else null
+                                    pagerState.scrollToPage(target)
+                                }
                             }
                         },
                         onMultiTouchChanged = { multiTouch ->
@@ -256,7 +260,14 @@ fun ComicReaderScreen(
                                 androidx.compose.runtime.SideEffect {
                                     if (pageIndex == pagerState.currentPage) displayedPage = pageIndex
                                 }
-                                ComicPageContent(scrollEnabled = !isCurrentPageZoomed && !isMultiTouchActive)
+                                ComicPageContent(
+                                    scrollEnabled = !isCurrentPageZoomed && !isMultiTouchActive,
+                                    restartScale = if (restartPage == pageIndex && pageIndex == pagerState.currentPage) readerZoom.scale.floatValue else null,
+                                    onRestart = { origin ->
+                                        readerZoom.offset.value = origin
+                                        restartPage = null
+                                    }
+                                )
                             },
                             loading = {
                                 Box(

@@ -27,13 +27,38 @@ internal fun comicPageHeight(width: Float, height: Float, imageWidth: Float, ima
     return if (width > height) fittedHeight * reduction else minOf(height, fittedHeight)
 }
 
+/** Translation of the centered zoom layer that places the fitted page origin at the viewport origin. */
+internal fun comicPageStartOffset(scale: Float, width: Float, height: Float, imageWidth: Float, imageHeight: Float): androidx.compose.ui.geometry.Offset {
+    val pageHeight = comicPageHeight(width, height, imageWidth, imageHeight)
+    val pageWidth = if (width > height) width else minOf(width, pageHeight * imageWidth / imageHeight)
+    return androidx.compose.ui.geometry.Offset(
+        (pageWidth * scale - width) / 2f,
+        if (width > height) height * (scale - 1f) / 2f else (pageHeight * scale - height) / 2f
+    )
+}
+
 /** Muestra una imagen ya cargada, ajustada al ancho y desplazable en horizontal si [scrollEnabled]; en vertical conserva el ajuste al área visible. */
 @Composable
-internal fun SubcomposeAsyncImageScope.ComicPageContent(scrollEnabled: Boolean) {
+internal fun SubcomposeAsyncImageScope.ComicPageContent(
+    scrollEnabled: Boolean,
+    restartScale: Float? = null,
+    onRestart: (androidx.compose.ui.geometry.Offset) -> Unit = {}
+) {
     val imageSize = painter.intrinsicSize
     val fitScale = LocalReaderFitScale.current
     val reduction = LocalReaderPageReduction.current
+    val scrollState = rememberScrollState()
+    val density = androidx.compose.ui.platform.LocalDensity.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
+        androidx.compose.runtime.LaunchedEffect(restartScale, maxWidth, maxHeight, imageSize) {
+            if (restartScale != null && imageSize.width > 0f && imageSize.height > 0f) {
+                scrollState.scrollTo(0)
+                onRestart(comicPageStartOffset(
+                    restartScale, with(density) { maxWidth.toPx() }, with(density) { maxHeight.toPx() },
+                    imageSize.width, imageSize.height
+                ))
+            }
+        }
         // Usar la altura sin reducir evita que el límite dependa del zoom actual.
         val fullPageHeight = comicPageHeight(maxWidth.value, maxHeight.value, imageSize.width, imageSize.height)
         SideEffect { fitScale?.value = maxHeight.value / fullPageHeight }
@@ -41,7 +66,7 @@ internal fun SubcomposeAsyncImageScope.ComicPageContent(scrollEnabled: Boolean) 
             // Solo las imágenes cargadas reciben espacio vertical sin límite; carga y error ocupan el área visible.
             val pageHeight = comicPageHeight(maxWidth.value, maxHeight.value, imageSize.width, imageSize.height, reduction)
             androidx.compose.foundation.layout.Box(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState(), enabled = scrollEnabled),
+                Modifier.fillMaxSize().verticalScroll(scrollState, enabled = scrollEnabled),
                 contentAlignment = Alignment.TopCenter
             ) {
                 this@ComicPageContent.SubcomposeAsyncImageContent(

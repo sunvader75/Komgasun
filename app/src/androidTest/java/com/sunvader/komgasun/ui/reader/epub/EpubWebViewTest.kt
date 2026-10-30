@@ -204,6 +204,69 @@ class EpubWebViewTest {
         assertEquals("true", js(web, "(function(){window.__epub.apply(0,18,true,false);return getComputedStyle(document.querySelector('p')).fontFamily.includes('Literata');})()"))
     }
 
+    @Test fun shortFinalColumnKeepsGlyphHeight() {
+        lateinit var web: EpubWebView
+        compose.setContent {
+            AndroidView(modifier = Modifier.requiredSize(320.dp, 480.dp), factory = {
+                EpubPageTurnView(it).also { sheet ->
+                    val view = sheet.reader
+                    web = view
+                    view.loadDataWithBaseURL(EpubHtml.ORIGIN + "/shell", EpubHtml.shell, "text/html", "UTF-8", null)
+                }
+            }, onRelease = { it.dispose() })
+        }
+        compose.waitUntil(5000) {
+            var loaded = false
+            compose.runOnIdle { loaded = web.progress == 100 }
+            loaded
+        }
+        val html = "<style>p{margin:0!important;text-indent:0!important}</style>" +
+            "<p>Identical reading text</p>".repeat(67)
+        assertEquals("true", js(web, EpubHtml.install(org.json.JSONObject.quote(html))))
+        fun firstGlyphHeight(fraction: Int): Int {
+            val layout = org.json.JSONArray(js(web, "window.__epub.apply($fraction,20,false,false)"))
+            assertTrue("The fixture must span multiple pages", layout.getInt(1) > 1)
+            assertEquals(if (fraction == 0) 0 else layout.getInt(1) - 1, layout.getInt(0))
+            val painted = java.util.concurrent.atomic.AtomicBoolean(false)
+            compose.runOnIdle {
+                web.postVisualStateCallback(1L, object : android.webkit.WebView.VisualStateCallback() {
+                    override fun onComplete(requestId: Long) { painted.set(true) }
+                })
+                web.invalidate()
+            }
+            compose.waitUntil(10000) { painted.get() }
+            // Capture the window compositor, never WebView.draw's software raster path.
+            val location = IntArray(2)
+            var w = 0
+            var h = 0
+            compose.runOnIdle { web.getLocationOnScreen(location); w = web.width; h = web.height }
+            val screenshot = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+                .uiAutomation.takeScreenshot()
+            assertNotNull("Window capture must succeed", screenshot)
+            val image = android.graphics.Bitmap.createBitmap(screenshot, location[0], location[1], w, h)
+            screenshot.recycle()
+            try {
+                val rows = (0 until image.height).map { y ->
+                    (0 until image.width).any { x ->
+                        val pixel = image.getPixel(x, y)
+                        android.graphics.Color.alpha(pixel) > 0 &&
+                            android.graphics.Color.red(pixel) < 100 &&
+                            android.graphics.Color.green(pixel) < 100 &&
+                            android.graphics.Color.blue(pixel) < 100
+                    }
+                }
+                val top = rows.indexOfFirst { it }
+                assertTrue("The page must paint visible text", top >= 0)
+                return rows.drop(top).takeWhile { it }.size
+            } finally { image.recycle() }
+        }
+        val fullHeight = firstGlyphHeight(0)
+        val finalHeight = firstGlyphHeight(1)
+        assertTrue("Final-page glyph height $finalHeight must match full-page height $fullHeight",
+            kotlin.math.abs(fullHeight - finalHeight) <= 1)
+        assertEquals(fullHeight, firstGlyphHeight(0))
+    }
+
     @Test fun blankDocumentCannotReceivePublication() {
         lateinit var web: EpubWebView
         compose.setContent { AndroidView(factory = { EpubWebView(it).also { v -> web = v } }, onRelease = { it.dispose() }) }

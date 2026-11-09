@@ -12,7 +12,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -21,6 +20,7 @@ import java.util.UUID
 import com.sunvader.komgasun.data.model.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import androidx.core.content.edit
 
 data class EpubReaderUiState(
     val isLoading: Boolean = true,
@@ -48,6 +48,7 @@ class EpubReaderViewModel(
     private val readerPreferences = application.getSharedPreferences("epub_reader_settings", 0)
     private val _uiState = MutableStateFlow(
         EpubReaderUiState(isDarkTheme = readerPreferences.getBoolean("dark_theme", true),
+            fontSizeSp = readerPreferences.getInt("font_size_sp", 18),
             useOriginalFonts = readerPreferences.getBoolean("original_fonts", false))
     )
     val uiState: StateFlow<EpubReaderUiState> = _uiState.asStateFlow()
@@ -66,7 +67,7 @@ class EpubReaderViewModel(
     private val syncMutex = Mutex()
     private val devicePreferences = application.getSharedPreferences("epub_sync_device", 0)
     private val deviceId: String = devicePreferences.getString("id", null) ?: UUID.randomUUID().toString().also {
-        devicePreferences.edit().putString("id", it).apply()
+        devicePreferences.edit { putString("id", it) }
     }
 
     /**
@@ -107,12 +108,12 @@ class EpubReaderViewModel(
                             repository.downloadBookFile(bookId, staging) { value ->
                                 if (token == generation) _uiState.update { it.copy(downloadProgress = value.coerceIn(0f, 1f)) }
                             }.getOrThrow()
-                            ensureActive()
+                            this@withContext.ensureActive()
                             val after = repository.getActiveConfig()
                             check(after?.serverUrl == config.serverUrl && after.username == config.username) { "La sesión ha cambiado" }
                             // Validate before replacing the cache. Cancelled/invalid downloads cannot replace it.
                             EpubParser.parse(staging)
-                            ensureActive()
+                            this@withContext.ensureActive()
                             check(staging.renameTo(destination)) { "No se pudo guardar la caché EPUB" }
                             destination
                         } finally {
@@ -158,12 +159,12 @@ class EpubReaderViewModel(
                 if (remote.isSuccess) {
                     syncQueue = EpubProgressionQueue(viewModelScope, send = { value ->
                         syncMutex.withLock {
-                            ensureActive()
+                            this@launch.ensureActive()
                             if (sessionToken != session || repository.getActiveConfig() != config) {
                                 Result.failure(IllegalStateException("La sesión ha cambiado"))
                             } else {
                                 val result = repository.putEpubProgression(config, bookId, value)
-                                ensureActive()
+                                this@launch.ensureActive()
                                 if (sessionToken == session && repository.getActiveConfig() == config) result
                                 else Result.failure(IllegalStateException("La sesión ha cambiado"))
                             }
@@ -299,10 +300,10 @@ class EpubReaderViewModel(
     /** Evita escrituras iguales; al añadir una clave limita a 256 localizadores con expulsión lexicográfica. */
     private fun saveLocal(key: String, locator: String) {
         if (preferences.getString(key, null) == locator) return
-        val editor = preferences.edit()
-        // Bound private locator storage; deterministic eviction needs no secondary index.
-        if (!preferences.contains(key)) preferences.all.keys.sorted().take((preferences.all.size - 255).coerceAtLeast(0)).forEach(editor::remove)
-        editor.putString(key, locator).apply()
+        preferences.edit {
+            // Bound private locator storage; deterministic eviction needs no secondary index.
+            if (!preferences.contains(key)) preferences.all.keys.sorted().take((preferences.all.size - 255).coerceAtLeast(0)).forEach(this::remove)
+        putString(key, locator)}
     }
 
     /** Traduce el código HTTP reconocido a aviso de progreso solo local, sin iniciar reintentos. */
@@ -340,14 +341,14 @@ class EpubReaderViewModel(
         identity = null
         _uiState.update { it.copy(isReady = false, isLoading = true) }
     }
-    /** Alias histórico: avanza una página, no salta directamente de capítulo. */
-    fun nextChapter() = movePage(1)
-    /** Alias histórico: retrocede una página, no salta directamente de capítulo. */
-    fun previousChapter() = movePage(-1)
-    fun nextPage() = movePage(1)
-    fun previousPage() = movePage(-1)
+//    /** Alias histórico: avanza una página, no salta directamente de capítulo. */
+//    fun nextChapter() = movePage(1)
+//    /** Alias histórico: retrocede una página, no salta directamente de capítulo. */
+//    fun previousChapter() = movePage(-1)
+//    fun nextPage() = movePage(1)
+//    fun previousPage() = movePage(-1)
     fun toggleControls() { _uiState.update { it.copy(showControls = !it.showControls) } }
-    fun setControlsVisible(visible: Boolean) { _uiState.update { it.copy(showControls = visible) } }
+//    fun setControlsVisible(visible: Boolean) { _uiState.update { it.copy(showControls = visible) } }
     /** Limita el destino base cero al capítulo medido y marca cambios para el siguiente guardado. */
     fun seekPage(targetPage: Int) {
         val state = _uiState.value
@@ -401,12 +402,19 @@ class EpubReaderViewModel(
         }
     }
     /** Aumenta dos unidades hasta 32 e invalida la medida para repaginar manteniendo la proporción. */
-    fun increaseFontSize() { _uiState.update { it.copy(fontSizeSp = (it.fontSizeSp + 2).coerceAtMost(32), pageCount = 0) } }
+    fun increaseFontSize() { setFontSize((_uiState.value.fontSizeSp + 2).coerceAtMost(32)) }
     /** Reduce dos unidades hasta 12 e invalida la medida para repaginar manteniendo la proporción. */
-    fun decreaseFontSize() { _uiState.update { it.copy(fontSizeSp = (it.fontSizeSp - 2).coerceAtLeast(12), pageCount = 0) } }
+    fun decreaseFontSize() { setFontSize((_uiState.value.fontSizeSp - 2).coerceAtLeast(12))
+    }
+
+    private fun setFontSize(fontSizeSp: Int) {
+        readerPreferences.edit {putInt("font_size_sp", fontSizeSp)}
+        _uiState.update { it.copy(fontSizeSp = fontSizeSp, pageCount = 0) }
+    }
+
     /** Persiste el modo tipográfico e invalida tanto el mapa global como la medida del capítulo. */
     fun setUseOriginalFonts(enabled: Boolean) {
-        readerPreferences.edit().putBoolean("original_fonts", enabled).apply()
+        readerPreferences.edit {putBoolean("original_fonts", enabled)}
         bookPages = null
         _uiState.update { it.copy(useOriginalFonts = enabled, pageCount = 0) }
     }
@@ -414,7 +422,7 @@ class EpubReaderViewModel(
     /** Alterna y persiste el tema del lector sin invalidar la paginación ni cambiar la posición. */
     fun toggleTheme() {
         val isDarkTheme = !_uiState.value.isDarkTheme
-        readerPreferences.edit().putBoolean("dark_theme", isDarkTheme).apply()
+        readerPreferences.edit {putBoolean("dark_theme", isDarkTheme)}
         _uiState.update { it.copy(isDarkTheme = isDarkTheme) }
     }
     /** Solicita borrar el fichero remoto; entrega el resultado en viewModelScope, sin cerrar por sí solo la pantalla. */

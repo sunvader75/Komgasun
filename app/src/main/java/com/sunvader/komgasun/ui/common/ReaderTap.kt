@@ -34,6 +34,25 @@ internal fun readerTapDirection(scale: Float, horizontalFraction: Float): Int = 
     else -> 0
 }
 
+/** Translation of the centered zoom layer that places the fitted page origin at the viewport origin. */
+internal fun readerPageStartOffset(
+    scale: Float,
+    width: Float,
+    height: Float,
+    imageWidth: Float,
+    imageHeight: Float
+): Offset {
+    if (scale <= 1f) return Offset.Zero
+    if (!imageWidth.isFinite() || !imageHeight.isFinite() || imageWidth <= 0f || imageHeight <= 0f) return Offset.Zero
+    val fittedHeight = width * (imageHeight / imageWidth)
+    val pageHeight = if (width > height) fittedHeight else minOf(height, fittedHeight)
+    val pageWidth = if (width > height) width else minOf(width, pageHeight * imageWidth / imageHeight)
+    return Offset(
+        (pageWidth * scale - width) / 2f,
+        if (width > height) height * (scale - 1f) / 2f else (pageHeight * scale - height) / 2f
+    )
+}
+
 /** Estado compartido por las páginas de un lector; no se guarda entre libros. */
 class ReaderZoomState {
     internal val scale = mutableFloatStateOf(1f)

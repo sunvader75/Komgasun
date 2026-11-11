@@ -38,11 +38,22 @@ internal fun PdfPageContent(
     imageHeight: Float,
     resetKey: Any?,
     scrollEnabled: Boolean,
+    restartScale: Float? = null,
+    onRestart: (androidx.compose.ui.geometry.Offset) -> Unit = {},
     content: @Composable (Modifier) -> Unit
 ) {
     val fitScale = LocalReaderFitScale.current
     val reduction = LocalReaderPageReduction.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
+        androidx.compose.runtime.LaunchedEffect(restartScale, maxWidth, maxHeight, imageWidth, imageHeight) {
+            if (restartScale != null && imageWidth > 0f && imageHeight > 0f) {
+                onRestart(com.sunvader.komgasun.ui.common.readerPageStartOffset(
+                    restartScale, with(density) { maxWidth.toPx() }, with(density) { maxHeight.toPx() },
+                    imageWidth, imageHeight
+                ))
+            }
+        }
         // Usar la altura sin reducir evita que el límite dependa del zoom actual.
         val fullPageHeight = pdfPageHeight(maxWidth.value, maxHeight.value, imageWidth, imageHeight)
         SideEffect { fitScale?.value = maxHeight.value / fullPageHeight }

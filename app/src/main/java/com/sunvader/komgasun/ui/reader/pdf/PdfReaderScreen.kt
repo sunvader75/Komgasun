@@ -70,6 +70,7 @@ import com.sunvader.komgasun.ui.common.ErrorView
 import com.sunvader.komgasun.ui.common.LoadingView
 import com.sunvader.komgasun.ui.common.ReaderZoomState
 import com.sunvader.komgasun.ui.common.ZoomableBox
+import androidx.compose.ui.geometry.Offset
 import kotlinx.coroutines.launch
 
 /**
@@ -209,6 +210,7 @@ fun PdfReaderScreen(
                     var sliderValue by remember(state.initialPage) { mutableFloatStateOf(state.initialPage.toFloat()) }
                     val readerZoom = remember(bookId) { ReaderZoomState() }
                     val isCurrentPageZoomed = readerZoom.isScaled
+                    var restartPage by remember(bookId) { mutableStateOf<Int?>(null) }
                     var isMultiTouchActive by remember { mutableStateOf(false) }
 
                     LaunchedEffect(state.initialPage) {
@@ -221,6 +223,11 @@ fun PdfReaderScreen(
                     LaunchedEffect(pagerState.currentPage) {
                         sliderValue = pagerState.currentPage.toFloat()
                         isMultiTouchActive = false
+                        if (readerZoom.scale.floatValue <= 1f) {
+                            readerZoom.offset.value = Offset.Zero
+                        } else {
+                            restartPage = pagerState.currentPage
+                        }
                         viewModel.onPageChanged(pagerState.currentPage, totalPages)
                     }
 
@@ -259,7 +266,14 @@ fun PdfReaderScreen(
                                 onNavigate = { direction ->
                                     val target = pagerState.currentPage + direction
                                     if (target in 0 until pagerState.pageCount) {
-                                        scope.launch { pagerState.scrollToPage(target) }
+                                        scope.launch {
+                                            if (readerZoom.scale.floatValue > 1f) {
+                                                restartPage = target
+                                            } else {
+                                                readerZoom.offset.value = Offset.Zero
+                                            }
+                                            pagerState.scrollToPage(target)
+                                        }
                                     }
                                 },
                                     onMultiTouchChanged = { multiTouch ->
@@ -273,7 +287,12 @@ fun PdfReaderScreen(
                                             imageWidth = bitmap!!.width.toFloat(),
                                             imageHeight = bitmap!!.height.toFloat(),
                                             resetKey = pagerState.currentPage,
-                                            scrollEnabled = !isCurrentPageZoomed && !isMultiTouchActive
+                                            scrollEnabled = readerZoom.scale.floatValue <= 1f && !isMultiTouchActive,
+                                            restartScale = if (restartPage == pageIndex && pageIndex == pagerState.currentPage) readerZoom.scale.floatValue else null,
+                                            onRestart = { origin ->
+                                                readerZoom.offset.value = origin
+                                                restartPage = null
+                                            }
                                         ) { pageModifier ->
                                             Image(
                                                 bitmap = bitmap!!.asImageBitmap(),
@@ -302,7 +321,14 @@ fun PdfReaderScreen(
                                 onNavigate = { direction ->
                                     val target = pagerState.currentPage + direction
                                     if (target in 0 until pagerState.pageCount) {
-                                        scope.launch { pagerState.scrollToPage(target) }
+                                        scope.launch {
+                                            if (readerZoom.scale.floatValue > 1f) {
+                                                restartPage = target
+                                            } else {
+                                                readerZoom.offset.value = Offset.Zero
+                                            }
+                                            pagerState.scrollToPage(target)
+                                        }
                                     }
                                 },
                                     onMultiTouchChanged = { multiTouch ->
@@ -321,7 +347,12 @@ fun PdfReaderScreen(
                                                 imageWidth = imageSize.width,
                                                 imageHeight = imageSize.height,
                                                 resetKey = pagerState.currentPage,
-                                                scrollEnabled = !isCurrentPageZoomed && !isMultiTouchActive
+                                                scrollEnabled = readerZoom.scale.floatValue <= 1f && !isMultiTouchActive,
+                                                restartScale = if (restartPage == pageIndex && pageIndex == pagerState.currentPage) readerZoom.scale.floatValue else null,
+                                                onRestart = { origin ->
+                                                    readerZoom.offset.value = origin
+                                                    restartPage = null
+                                                }
                                             ) { pageModifier ->
                                                 SubcomposeAsyncImageContent(
                                                     modifier = pageModifier,

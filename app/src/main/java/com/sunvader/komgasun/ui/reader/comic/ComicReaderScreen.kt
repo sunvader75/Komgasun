@@ -69,6 +69,7 @@ import com.sunvader.komgasun.ui.common.ErrorView
 import com.sunvader.komgasun.ui.common.LoadingView
 import com.sunvader.komgasun.ui.common.ReaderZoomState
 import com.sunvader.komgasun.ui.common.ZoomableBox
+import androidx.compose.ui.geometry.Offset
 import kotlinx.coroutines.launch
 
 /**
@@ -186,6 +187,11 @@ fun ComicReaderScreen(
                 LaunchedEffect(pagerState.currentPage) {
                     sliderValue = pagerState.currentPage.toFloat()
                     isMultiTouchActive = false
+                    if (readerZoom.scale.floatValue <= 1f) {
+                        readerZoom.offset.value = Offset.Zero
+                    } else {
+                        restartPage = pagerState.currentPage
+                    }
                     viewModel.onPageChanged(pagerState.currentPage, pages.size)
                 }
 
@@ -227,7 +233,11 @@ fun ComicReaderScreen(
                             val target = pagerState.currentPage + direction
                             if (target in 0 until pagerState.pageCount) {
                                 scope.launch {
-                                    restartPage = if (readerZoom.scale.floatValue > 1f) target else null
+                                    if (readerZoom.scale.floatValue > 1f) {
+                                        restartPage = target
+                                    } else {
+                                        readerZoom.offset.value = Offset.Zero
+                                    }
                                     pagerState.scrollToPage(target)
                                 }
                             }
@@ -261,7 +271,8 @@ fun ComicReaderScreen(
                                     if (pageIndex == pagerState.currentPage) displayedPage = pageIndex
                                 }
                                 ComicPageContent(
-                                    scrollEnabled = !isCurrentPageZoomed && !isMultiTouchActive,
+                                    scrollEnabled = readerZoom.scale.floatValue <= 1f && !isMultiTouchActive,
+                                    resetKey = pagerState.currentPage,
                                     restartScale = if (restartPage == pageIndex && pageIndex == pagerState.currentPage) readerZoom.scale.floatValue else null,
                                     onRestart = { origin ->
                                         readerZoom.offset.value = origin

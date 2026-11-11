@@ -154,6 +154,9 @@ fun ZoomableBox(
                             }
                         }
 
+                        val isLandscapeReduction = boxSize.width > boxSize.height && scale < 1f
+                        val allowsOneFingerPan = isReaderScaled(scale) && !isLandscapeReduction
+
                         if (pressedPointers >= 2) {
                             // Two or more fingers: active pinch-to-zoom
                             hadMultiTouch = true
@@ -166,17 +169,18 @@ fun ZoomableBox(
                             val isZoomed = isReaderScaled(scale)
                             currentZoomChanged?.invoke(isZoomed)
 
-                            offset = if (isReaderScaled(scale) && boxSize.width > 0 && boxSize.height > 0) {
+                            val reducePageNow = boxSize.width > boxSize.height && newScale < 1f
+                            offset = if (!reducePageNow && isReaderScaled(newScale) && boxSize.width > 0 && boxSize.height > 0) {
                                 readerPanOffset(
-                                    offset, panChange, scale,
+                                    offset, panChange, newScale,
                                     boxSize.width.toFloat(), boxSize.height.toFloat()
                                 )
                             } else {
                                 Offset.Zero
                             }
                             event.changes.forEach { it.consume() }
-                        } else if (pressedPointers == 1 && isReaderScaled(scale)) {
-                            // One finger at either scaled size: pan around without paging
+                        } else if (pressedPointers == 1 && allowsOneFingerPan) {
+                            // One finger at scaled size: pan around without paging
                             val panChange = event.calculatePan()
                             drag += panChange
                             if (drag.getDistance() > viewConfiguration.touchSlop) dragging = true
@@ -189,10 +193,11 @@ fun ZoomableBox(
                             }
                             event.changes.forEach { it.consume() }
                         }
-                        // At normal size, leave one-finger drags to the pager; reduced pages disable it.
+                        // At normal size or landscape reduction, leave one-finger drags to pager or vertical scroll.
                     } while (event.changes.any { it.pressed })
 
-                    if (dragging && !hadMultiTouch && isReaderScaled(scale) &&
+                    val allowsFling = isReaderScaled(scale) && !(boxSize.width > boxSize.height && scale < 1f)
+                    if (dragging && !hadMultiTouch && allowsFling &&
                         boxSize.width > 0 && boxSize.height > 0
                     ) {
                         val velocity = velocityTracker.calculateVelocity()
@@ -216,6 +221,8 @@ fun ZoomableBox(
                         scale = 1f
                         offset = Offset.Zero
                         currentZoomChanged?.invoke(false)
+                    } else if (boxSize.width > boxSize.height && scale < 1f) {
+                        offset = Offset.Zero
                     }
                 }
             },
@@ -231,8 +238,8 @@ fun ZoomableBox(
                 modifier = Modifier.graphicsLayer {
                     scaleX = if (reducePage) 1f else scale
                     scaleY = if (reducePage) 1f else scale
-                    translationX = offset.x
-                    translationY = offset.y
+                    translationX = if (reducePage) 0f else offset.x
+                    translationY = if (reducePage) 0f else offset.y
                 },
                 contentAlignment = Alignment.Center
             ) {

@@ -37,13 +37,15 @@ data class EpubReaderUiState(
     val isDarkTheme: Boolean = true,
     val showControls: Boolean = false,
     val syncStatus: String? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val translationState: EpubTranslationState = EpubTranslationState.Idle
 )
 
 class EpubReaderViewModel(
     application: Application,
     private val bookId: String,
-    private val repository: KomgaRepository = KomgasunApp.instance.repository
+    private val repository: KomgaRepository = KomgasunApp.instance.repository,
+    private val pageTranslator: EpubPageTranslator = EpubPageTranslator()
 ) : AndroidViewModel(application) {
     private val readerPreferences = application.getSharedPreferences("epub_reader_settings", 0)
     private val _uiState = MutableStateFlow(
@@ -55,6 +57,8 @@ class EpubReaderViewModel(
     private val preferences = application.getSharedPreferences("epub_locators", 0)
     private var identity: String? = null
     private var loadJob: Job? = null
+    private var translationJob: Job? = null
+    private val translatedPageCache = mutableMapOf<String, List<EpubVisibleBlock>>()
     private var generation = 0L
     private var lastPosition: Pair<Int, Double>? = null
     private var lastModified = 0L
@@ -208,6 +212,7 @@ class EpubReaderViewModel(
     fun selectChapter(index: Int, atEnd: Boolean = false) {
         val state = _uiState.value
         if (!state.isReady || index !in (state.epubBook?.chapters?.indices ?: IntRange.EMPTY)) return
+        dismissTranslation()
         positionChangedByReader = true
         _uiState.update { it.copy(currentChapterIndex = index, page = 0, pageCount = 0,
             proportion = if (atEnd) 1.0 else 0.0, chapterGeneration = ++generation) }
@@ -222,6 +227,7 @@ class EpubReaderViewModel(
             state.epubBook?.chapters?.size ?: 0, direction)
         if (position.chapter != state.currentChapterIndex) selectChapter(position.chapter, direction < 0)
         else if (position.page != state.page) {
+            dismissTranslation()
             positionChangedByReader = true
             _uiState.update { it.copy(page = position.page, proportion = EpubPagination.proportion(position.page, it.pageCount)) }
         }
@@ -331,6 +337,8 @@ class EpubReaderViewModel(
     fun onReaderClosed() {
         flushProgress()
         saveCoverSummary()
+        dismissTranslation()
+        translatedPageCache.clear()
         ++generation
         ++session
         syncQueue?.close()
@@ -355,6 +363,7 @@ class EpubReaderViewModel(
         if (!state.isReady || state.pageCount <= 0) return
         val clamped = targetPage.coerceIn(0, state.pageCount - 1)
         if (clamped != state.page) {
+            dismissTranslation()
             positionChangedByReader = true
             _uiState.update { it.copy(page = clamped, proportion = EpubPagination.proportion(clamped, it.pageCount)) }
         }
@@ -367,6 +376,7 @@ class EpubReaderViewModel(
         if (position.chapter == state.currentChapterIndex && state.pageCount > 0) {
             seekPage(position.page)
         } else {
+            dismissTranslation()
             positionChangedByReader = true
             _uiState.update { it.copy(currentChapterIndex = position.chapter, page = 0, pageCount = 0,
                 proportion = pages.proportion(position.chapter, position.page), chapterGeneration = ++generation) }
@@ -383,6 +393,7 @@ class EpubReaderViewModel(
         if (chapter == state.currentChapterIndex && state.pageCount > 0) {
             seekPage(EpubPagination.page(proportion, state.pageCount))
         } else {
+            dismissTranslation()
             _uiState.update { it.copy(currentChapterIndex = chapter, page = 0, pageCount = 0,
                 proportion = proportion, chapterGeneration = ++generation) }
         }
@@ -408,12 +419,14 @@ class EpubReaderViewModel(
     }
 
     private fun setFontSize(fontSizeSp: Int) {
+        dismissTranslation()
         readerPreferences.edit {putInt("font_size_sp", fontSizeSp)}
         _uiState.update { it.copy(fontSizeSp = fontSizeSp, pageCount = 0) }
     }
 
     /** Persiste el modo tipográfico e invalida tanto el mapa global como la medida del capítulo. */
     fun setUseOriginalFonts(enabled: Boolean) {
+        dismissTranslation()
         readerPreferences.edit {putBoolean("original_fonts", enabled)}
         bookPages = null
         _uiState.update { it.copy(useOriginalFonts = enabled, pageCount = 0) }
@@ -424,6 +437,99 @@ class EpubReaderViewModel(
         val isDarkTheme = !_uiState.value.isDarkTheme
         readerPreferences.edit {putBoolean("dark_theme", isDarkTheme)}
         _uiState.update { it.copy(isDarkTheme = isDarkTheme) }
+    }
+
+    /**
+     * Alterna entre el texto original del capítulo y la traducción al español de la página visible actual.
+     */
+    fun togglePageTranslation(extractVisibleBlocks: suspend () -> List<EpubVisibleBlock>) {
+        val state = _uiState.value
+        if (!state.isReady) return
+        when (val current = state.translationState) {
+            is EpubTranslationState.Success ->
+                if (current.chapterIndex == state.currentChapterIndex && current.page == state.page) {
+                    dismissTranslation()
+                    return
+                }
+            EpubTranslationState.Loading -> {
+                dismissTranslation()
+                return
+            }
+            else -> Unit
+        }
+        translateCurrentPage(extractVisibleBlocks)
+    }
+
+    /**
+     * Extrae los bloques visibles del WebView en la página actual y los traduce en local (EN → ES).
+     */
+    fun translateCurrentPage(extractVisibleBlocks: suspend () -> List<EpubVisibleBlock>) {
+        val state = _uiState.value
+        if (!state.isReady) return
+        val chapterIndex = state.currentChapterIndex
+        val pageIndex = state.page
+        val cacheKey = "$chapterIndex:$pageIndex:${state.fontSizeSp}:${state.useOriginalFonts}"
+
+        translatedPageCache[cacheKey]?.let { cached ->
+            translationJob?.cancel()
+            _uiState.update {
+                it.copy(translationState = EpubTranslationState.Success(chapterIndex, pageIndex, cached))
+            }
+            return
+        }
+
+        translationJob?.cancel()
+        translationJob = viewModelScope.launch {
+            _uiState.update { it.copy(translationState = EpubTranslationState.Loading) }
+            val visibleBlocks = runCatching { extractVisibleBlocks() }.getOrElse { emptyList() }
+            if (visibleBlocks.isEmpty()) {
+                _uiState.update { it.copy(translationState = EpubTranslationState.Empty) }
+                return@launch
+            }
+
+            pageTranslator.translateVisibleBlocks(visibleBlocks)
+                .onSuccess { translated ->
+                    if (translated.isEmpty()) {
+                        _uiState.update { it.copy(translationState = EpubTranslationState.Empty) }
+                    } else {
+                        translatedPageCache[cacheKey] = translated
+                        _uiState.update {
+                            it.copy(
+                                translationState = EpubTranslationState.Success(
+                                    chapterIndex = chapterIndex,
+                                    page = pageIndex,
+                                    blocks = translated
+                                )
+                            )
+                        }
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            translationState = EpubTranslationState.Error(
+                                error.localizedMessage ?: "Error al traducir la página"
+                            )
+                        )
+                    }
+                }
+        }
+    }
+
+    /** Cierra la capa de traducción de la página actual y cancela cualquier traducción en curso. */
+    fun dismissTranslation() {
+        translationJob?.cancel()
+        translationJob = null
+        if (_uiState.value.translationState !is EpubTranslationState.Idle) {
+            _uiState.update { it.copy(translationState = EpubTranslationState.Idle) }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        translationJob?.cancel()
+        translatedPageCache.clear()
+        pageTranslator.close()
     }
     /** Solicita borrar el fichero remoto; entrega el resultado en viewModelScope, sin cerrar por sí solo la pantalla. */
     fun deleteBookFile(onDone: (Result<Unit>) -> Unit) {

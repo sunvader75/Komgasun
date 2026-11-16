@@ -11,6 +11,10 @@ import android.webkit.WebViewClient
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
 
 /** Transporte del archivo de solo lectura y denegación por defecto; no registra interfaz JavaScript nativa. */
 @SuppressLint("SetJavaScriptEnabled", "ViewConstructor")
@@ -43,6 +47,7 @@ open class EpubWebView(context: Context) : WebView(context) {
     private var originalFonts = false
     private var evaluation = 0L
     private var callbackPending = false
+    private var translationApplied = false
     private val poll = object : Runnable {
         override fun run() {
             if (disposed) return
@@ -211,6 +216,7 @@ open class EpubWebView(context: Context) : WebView(context) {
             onImageDiagnostics("")
             evaluation++
             callbackPending = false
+            translationApplied = false
             installed = false
             isSettled = false
             book = state.epubBook
@@ -219,7 +225,44 @@ open class EpubWebView(context: Context) : WebView(context) {
             shellUrl = chapterUrl()
             documents.begin(shellUrl)
             loadUrl(shellUrl)
-        } else measurePage()
+        } else {
+            measurePage()
+            syncTranslationLayer(state)
+        }
+    }
+
+    private fun syncTranslationLayer(state: EpubReaderUiState) {
+        if (!installed || disposed) return
+        val activeTranslation = (state.translationState as? EpubTranslationState.Success)
+            ?.takeIf { it.chapterIndex == state.currentChapterIndex && it.page == state.page }
+        if (activeTranslation != null) {
+            translationApplied = true
+            evaluateJavascript(
+                EpubPageTranslationScripts.applyTranslatedBlocksScript(
+                    blocks = activeTranslation.blocks,
+                    fontSizeSp = font,
+                    isDarkTheme = dark,
+                    useOriginalFonts = originalFonts
+                ),
+                null
+            )
+        } else if (translationApplied) {
+            translationApplied = false
+            evaluateJavascript(EpubPageTranslationScripts.clearTranslatedBlocksScript(), null)
+        }
+    }
+
+    /**
+     * Extrae los bloques de texto visibles en la página actual del capítulo instalado.
+     */
+    suspend fun extractVisiblePageBlocks(): List<EpubVisibleBlock> = withContext(Dispatchers.Main.immediate) {
+        if (!installed || disposed) return@withContext emptyList()
+        val raw = suspendCancellableCoroutine<String?> { cont ->
+            evaluateJavascript(EpubPageTranslationScripts.extractVisibleBlocksScript()) { result ->
+                if (cont.isActive) cont.resume(result)
+            }
+        }
+        EpubPageTranslationScripts.parseExtractedBlocksJson(raw)
     }
 
     /**

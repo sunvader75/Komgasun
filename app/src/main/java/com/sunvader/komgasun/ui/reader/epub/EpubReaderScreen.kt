@@ -31,12 +31,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.TextDecrease
 import androidx.compose.material.icons.filled.TextIncrease
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -44,6 +47,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -194,6 +198,8 @@ fun EpubReaderScreen(
                 )
             }
             state.epubBook != null -> {
+                var pageTurnView by remember { mutableStateOf<EpubPageTurnView?>(null) }
+
                 // LAYER 1: Full reading view matching Google Play Books screenshot
                 Column(
                     modifier = Modifier
@@ -229,8 +235,6 @@ fun EpubReaderScreen(
                             onRelease = { it.release() },
                             modifier = Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 16.dp)
                         )
-
-                        var pageTurnView by remember { mutableStateOf<EpubPageTurnView?>(null) }
 
                         // Left edge tap zone for previous page
                         Box(
@@ -357,6 +361,30 @@ fun EpubReaderScreen(
 
                             }
 
+                            val isCurrentPageTranslated = (state.translationState as? EpubTranslationState.Success)
+                                ?.let { it.chapterIndex == state.currentChapterIndex && it.page == state.page } == true
+
+                            IconButton(
+                                onClick = {
+                                    viewModel.togglePageTranslation {
+                                        pageTurnView?.reader?.extractVisiblePageBlocks() ?: emptyList()
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    Icons.Default.Translate,
+                                    contentDescription = if (isCurrentPageTranslated) {
+                                        "Mostrar original en inglés"
+                                    } else {
+                                        "Traducir página"
+                                    },
+                                    tint = if (isCurrentPageTranslated) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        themeTextColor
+                                    }
+                                )
+                            }
                             IconButton(onClick = viewModel::decreaseFontSize) {
                                 Icon(
                                     Icons.Default.TextDecrease,
@@ -481,6 +509,20 @@ fun EpubReaderScreen(
                         }
                     }
                 }
+
+                EpubTranslationStatusBanner(
+                    translationState = state.translationState,
+                    onDismiss = viewModel::dismissTranslation,
+                    onRetry = {
+                        viewModel.translateCurrentPage {
+                            pageTurnView?.reader?.extractVisiblePageBlocks() ?: emptyList()
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(top = 68.dp, start = 16.dp, end = 16.dp)
+                )
             }
         }
 
@@ -538,5 +580,98 @@ fun EpubReaderScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun EpubTranslationStatusBanner(
+    translationState: EpubTranslationState,
+    onDismiss: () -> Unit,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    when (translationState) {
+        EpubTranslationState.Idle,
+        is EpubTranslationState.Success -> Unit
+        EpubTranslationState.Loading -> {
+            Surface(
+                color = Color.Black.copy(alpha = 0.85f),
+                shape = RoundedCornerShape(24.dp),
+                modifier = modifier
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    CircularProgressIndicator(
+                        color = MaterialTheme.colorScheme.primary,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "Traduciendo página...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+        EpubTranslationState.Empty -> {
+            Surface(
+                color = Color.Black.copy(alpha = 0.85f),
+                shape = RoundedCornerShape(16.dp),
+                modifier = modifier
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp)
+                ) {
+                    Text(
+                        text = "No se detectó texto en esta página.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = stringResource(R.string.close),
+                            tint = Color.White
+                        )
+                    }
+                }
+            }
+        }
+        is EpubTranslationState.Error -> {
+            Surface(
+                color = Color.Black.copy(alpha = 0.9f),
+                shape = RoundedCornerShape(16.dp),
+                modifier = modifier
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = translationState.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    TextButton(onClick = onRetry) {
+                        Text("Reintentar")
+                    }
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = stringResource(R.string.close),
+                            tint = Color.White
+                        )
+                    }
+                }
+            }
+        }
     }
 }

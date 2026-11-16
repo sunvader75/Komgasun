@@ -33,7 +33,7 @@ sealed interface PdfSourceMode {
 sealed interface PdfTranslationState {
     data object Idle : PdfTranslationState
     data class Loading(val pageIndex: Int) : PdfTranslationState
-    data class Success(val pageIndex: Int, val translatedText: String) : PdfTranslationState
+    data class Success(val pageIndex: Int, val translatedBitmap: Bitmap) : PdfTranslationState
     data class Empty(val pageIndex: Int) : PdfTranslationState
     data class Error(val pageIndex: Int, val message: String) : PdfTranslationState
 }
@@ -67,7 +67,7 @@ class PdfReaderViewModel(
     private val rendererLock = Any()
     private var rendererGeneration = 0
     private val bitmapCache = PdfPageCache<Bitmap>(32L * 1024 * 1024) { it.allocationByteCount.toLong() }
-    private val translatedPageCache = mutableMapOf<Int, String>()
+    private val translatedBlocksCache = mutableMapOf<Int, List<PdfTextBox>>()
     private var translationJob: Job? = null
     private var lastSyncedPage: Int = -1
 
@@ -241,7 +241,7 @@ class PdfReaderViewModel(
     fun onReaderClosed() {
         flushProgress()
         dismissTranslation()
-        translatedPageCache.clear()
+        translatedBlocksCache.clear()
         closeRenderer()
         _uiState.update {
             it.copy(
@@ -308,20 +308,38 @@ class PdfReaderViewModel(
     }
 
     /**
-     * Traduce bajo demanda la página actual usando OCR local y ML Kit Translate (EN → ES).
-     * Reutiliza la traducción en caché de la sesión si ya se procesó la misma página.
-     * En modo streaming, [streamBitmapProvider] obtiene el [Bitmap] de la página desde Coil.
+     * Alterna entre la página original y la página con los textos sustituidos en español (EN → ES).
+     * Si la página actual ya está traducida o traduciéndose, vuelve al original; si no, extrae los bloques
+     * con OCR local, los traduce y dibuja la superposición directamente sobre una copia del [Bitmap].
+     */
+    fun togglePageTranslation(streamBitmapProvider: (suspend (Int) -> Bitmap?)? = null) {
+        val state = _uiState.value
+        if (!state.isReady) return
+        val pageIndex = state.currentPage
+
+        when (val currentTranslation = state.translationState) {
+            is PdfTranslationState.Success -> if (currentTranslation.pageIndex == pageIndex) {
+                dismissTranslation()
+                return
+            }
+            is PdfTranslationState.Loading -> if (currentTranslation.pageIndex == pageIndex) {
+                dismissTranslation()
+                return
+            }
+            else -> Unit
+        }
+
+        translateCurrentPage(streamBitmapProvider)
+    }
+
+    /**
+     * Traduce bajo demanda la página actual y genera el [Bitmap] con los textos sustituidos en su posición.
+     * Reutiliza los bloques ya traducidos en la sesión para no repetir OCR ni traducción al alternar.
      */
     fun translateCurrentPage(streamBitmapProvider: (suspend (Int) -> Bitmap?)? = null) {
         val state = _uiState.value
         if (!state.isReady) return
         val pageIndex = state.currentPage
-
-        translatedPageCache[pageIndex]?.let { cached ->
-            translationJob?.cancel()
-            _uiState.update { it.copy(translationState = PdfTranslationState.Success(pageIndex, cached)) }
-            return
-        }
 
         translationJob?.cancel()
         translationJob = viewModelScope.launch {
@@ -342,16 +360,54 @@ class PdfReaderViewModel(
                 return@launch
             }
 
-            pageTranslator.translatePage(bitmap)
-                .onSuccess { translated ->
-                    if (translated.isBlank()) {
+            val cachedBlocks = translatedBlocksCache[pageIndex]
+            if (cachedBlocks != null) {
+                runCatching {
+                    withContext(Dispatchers.Default) {
+                        PdfPageOverlayRenderer.renderTranslatedPage(bitmap, cachedBlocks)
+                    }
+                }.onSuccess { rendered ->
+                    _uiState.update {
+                        it.copy(translationState = PdfTranslationState.Success(pageIndex, rendered))
+                    }
+                }.onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            translationState = PdfTranslationState.Error(
+                                pageIndex = pageIndex,
+                                message = error.localizedMessage ?: "Error al renderizar la traducción"
+                            )
+                        )
+                    }
+                }
+                return@launch
+            }
+
+            pageTranslator.translatePageBlocks(bitmap)
+                .onSuccess { blocks ->
+                    if (blocks.isEmpty()) {
                         _uiState.update {
                             it.copy(translationState = PdfTranslationState.Empty(pageIndex))
                         }
                     } else {
-                        translatedPageCache[pageIndex] = translated
-                        _uiState.update {
-                            it.copy(translationState = PdfTranslationState.Success(pageIndex, translated))
+                        translatedBlocksCache[pageIndex] = blocks
+                        runCatching {
+                            withContext(Dispatchers.Default) {
+                                PdfPageOverlayRenderer.renderTranslatedPage(bitmap, blocks)
+                            }
+                        }.onSuccess { rendered ->
+                            _uiState.update {
+                                it.copy(translationState = PdfTranslationState.Success(pageIndex, rendered))
+                            }
+                        }.onFailure { error ->
+                            _uiState.update {
+                                it.copy(
+                                    translationState = PdfTranslationState.Error(
+                                        pageIndex = pageIndex,
+                                        message = error.localizedMessage ?: "Error al renderizar la traducción"
+                                    )
+                                )
+                            }
                         }
                     }
                 }
@@ -368,7 +424,7 @@ class PdfReaderViewModel(
         }
     }
 
-    /** Cierra el panel de traducción y cancela cualquier traducción en curso. */
+    /** Restaura la visualización original de la página y cancela cualquier traducción en curso. */
     fun dismissTranslation() {
         translationJob?.cancel()
         translationJob = null
@@ -388,7 +444,7 @@ class PdfReaderViewModel(
     override fun onCleared() {
         //super.onCleared()
         translationJob?.cancel()
-        translatedPageCache.clear()
+        translatedBlocksCache.clear()
         pageTranslator.close()
         closeRenderer()
     }

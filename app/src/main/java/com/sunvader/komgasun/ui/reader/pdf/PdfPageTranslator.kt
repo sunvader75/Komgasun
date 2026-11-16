@@ -21,16 +21,31 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * Contrato para extraer texto de una página renderizada como [Bitmap] y traducirlo bajo demanda.
+ * Bloque de texto detectado en la página con su recuadro en píxeles del [Bitmap] original y su traducción.
+ */
+data class PdfTextBox(
+    val left: Int,
+    val top: Int,
+    val right: Int,
+    val bottom: Int,
+    val lineCount: Int,
+    val translatedText: String
+) {
+    val width: Int get() = (right - left).coerceAtLeast(1)
+    val height: Int get() = (bottom - top).coerceAtLeast(1)
+}
+
+/**
+ * Contrato para extraer bloques de texto posicionados de una página renderizada como [Bitmap] y traducirlos.
  */
 interface PdfPageTranslator {
-    suspend fun translatePage(bitmap: Bitmap): Result<String>
+    suspend fun translatePageBlocks(bitmap: Bitmap): Result<List<PdfTextBox>>
     fun close()
 }
 
 /**
  * Implementación local basada en ML Kit (OCR de caracteres latinos + traducción EN → ES en el dispositivo).
- * Descarga el modelo de traducción la primera vez que se solicita si aún no está presente en el dispositivo.
+ * Conserva las coordenadas de cada bloque para poder sustituir el texto visualmente sobre la página.
  */
 class MlKitPdfPageTranslator : PdfPageTranslator {
     private val recognizer: TextRecognizer by lazy {
@@ -45,28 +60,54 @@ class MlKitPdfPageTranslator : PdfPageTranslator {
         Translation.getClient(options)
     }
 
-    override suspend fun translatePage(bitmap: Bitmap): Result<String> = withContext(Dispatchers.IO) {
+    override suspend fun translatePageBlocks(bitmap: Bitmap): Result<List<PdfTextBox>> = withContext(Dispatchers.IO) {
         try {
-            val image = InputImage.fromBitmap(bitmap, 0)
+            val softwareBitmap = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
+                bitmap.config == Bitmap.Config.HARDWARE
+            ) {
+                bitmap.copy(Bitmap.Config.ARGB_8888, false)
+            } else {
+                bitmap
+            }
+            val image = InputImage.fromBitmap(softwareBitmap, 0)
             val visionText = recognizer.process(image).awaitResult()
-            val blocks = visionText.textBlocks
-                .map { block -> normalizeOcrBlock(block.text) }
-                .filter { it.isNotBlank() }
 
-            if (blocks.isEmpty()) {
-                return@withContext Result.success("")
+            val rawCandidates = visionText.textBlocks.mapNotNull { block ->
+                val rect = block.boundingBox ?: return@mapNotNull null
+                val normalized = normalizeOcrBlock(block.text)
+                if (normalized.isBlank() || rect.width() <= 0 || rect.height() <= 0) {
+                    null
+                } else {
+                    Triple(rect, block.lines.size.coerceAtLeast(1), normalized)
+                }
+            }
+
+            if (rawCandidates.isEmpty()) {
+                return@withContext Result.success(emptyList())
             }
 
             val conditions = DownloadConditions.Builder().build()
             translator.downloadModelIfNeeded(conditions).awaitResult()
 
-            val translatedBlocks = ArrayList<String>(blocks.size)
-            for (block in blocks) {
+            val translatedBoxes = ArrayList<PdfTextBox>(rawCandidates.size)
+            for ((rect, lineCount, sourceText) in rawCandidates) {
                 currentCoroutineContext().ensureActive()
-                translatedBlocks.add(translator.translate(block).awaitResult())
+                val translated = translator.translate(sourceText).awaitResult().trim()
+                if (translated.isNotEmpty()) {
+                    translatedBoxes.add(
+                        PdfTextBox(
+                            left = rect.left,
+                            top = rect.top,
+                            right = rect.right,
+                            bottom = rect.bottom,
+                            lineCount = lineCount,
+                            translatedText = translated
+                        )
+                    )
+                }
             }
 
-            Result.success(translatedBlocks.joinToString(separator = "\n\n"))
+            Result.success(translatedBoxes)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

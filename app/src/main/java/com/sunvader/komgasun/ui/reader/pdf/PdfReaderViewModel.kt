@@ -8,9 +8,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.sunvader.komgasun.KomgasunApp
 import com.sunvader.komgasun.data.model.BookPageDto
-import com.sunvader.komgasun.data.remote.KomgaApiClient
 import com.sunvader.komgasun.data.repository.KomgaRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,10 +22,20 @@ import com.sunvader.komgasun.ui.reader.readerPageWindow
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
+import androidx.core.graphics.createBitmap
 
 sealed interface PdfSourceMode {
     data object StreamFromKomga : PdfSourceMode
     data class NativeRenderer(val totalPages: Int) : PdfSourceMode
+}
+
+sealed interface PdfTranslationState {
+    data object Idle : PdfTranslationState
+    data class Loading(val pageIndex: Int) : PdfTranslationState
+    data class Success(val pageIndex: Int, val translatedText: String) : PdfTranslationState
+    data class Empty(val pageIndex: Int) : PdfTranslationState
+    data class Error(val pageIndex: Int, val message: String) : PdfTranslationState
 }
 
 data class PdfReaderUiState(
@@ -38,13 +48,15 @@ data class PdfReaderUiState(
     val serverUrl: String = "",
     val mode: PdfSourceMode = PdfSourceMode.StreamFromKomga,
     val showControls: Boolean = true,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val translationState: PdfTranslationState = PdfTranslationState.Idle
 )
 
 class PdfReaderViewModel(
     application: Application,
     private val bookId: String,
-    private val repository: KomgaRepository = KomgasunApp.instance.repository
+    private val repository: KomgaRepository = KomgasunApp.instance.repository,
+    private val pageTranslator: PdfPageTranslator = MlKitPdfPageTranslator()
 ) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(PdfReaderUiState())
@@ -55,6 +67,8 @@ class PdfReaderViewModel(
     private val rendererLock = Any()
     private var rendererGeneration = 0
     private val bitmapCache = PdfPageCache<Bitmap>(32L * 1024 * 1024) { it.allocationByteCount.toLong() }
+    private val translatedPageCache = mutableMapOf<Int, String>()
+    private var translationJob: Job? = null
     private var lastSyncedPage: Int = -1
 
     /**
@@ -198,12 +212,15 @@ class PdfReaderViewModel(
      */
     fun onPageChanged(pageIndex: Int, totalPages: Int) {
         if (!_uiState.value.isReady) return
+        if (pageIndex != _uiState.value.currentPage && _uiState.value.translationState !is PdfTranslationState.Idle) {
+            dismissTranslation()
+        }
         _uiState.update { it.copy(currentPage = pageIndex, initialPage = pageIndex) }
         val pageNumber = pageIndex + 1
         if (pageNumber == lastSyncedPage) return
         lastSyncedPage = pageNumber
 
-        val isCompleted = pageNumber >= totalPages && totalPages > 0
+        val isCompleted = totalPages in 1..pageNumber
         repository.syncReadProgressAsync(bookId = bookId, page = pageNumber, completed = isCompleted)
     }
 
@@ -223,6 +240,8 @@ class PdfReaderViewModel(
     /** Envía el progreso, libera recursos nativos y reinicia disponibilidad y deduplicación para la próxima apertura. */
     fun onReaderClosed() {
         flushProgress()
+        dismissTranslation()
+        translatedPageCache.clear()
         closeRenderer()
         _uiState.update {
             it.copy(
@@ -245,7 +264,7 @@ class PdfReaderViewModel(
         // Renderiza primero la actual; comprueba cancelación entre renderizados serializados.
         readerPageWindow(current, total).forEach { page ->
             currentCoroutineContext().ensureActive()
-            if (page != current) delay(50)
+            if (page != current) delay(50.milliseconds)
             renderPageBitmap(page, generation)
         }
     }
@@ -272,10 +291,9 @@ class PdfReaderViewModel(
             renderer.openPage(pageIndex).use { page ->
                 // Limita incluso una página sobredimensionada a unos 16 MiB (ARGB), con escala máxima 1,5.
                 val scale = minOf(1.5, kotlin.math.sqrt(4_000_000.0 / (page.width.toDouble() * page.height)))
-                val bitmap = Bitmap.createBitmap(
+                val bitmap = createBitmap(
                     (page.width * scale).toInt().coerceAtLeast(1),
-                    (page.height * scale).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888
-                )
+                    (page.height * scale).toInt().coerceAtLeast(1))
                 page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                 if (pageIndex in readerPageWindow(_uiState.value.currentPage, renderer.pageCount)) {
                     bitmapCache.put(pageIndex, bitmap)
@@ -289,6 +307,74 @@ class PdfReaderViewModel(
         _uiState.update { it.copy(showControls = !it.showControls) }
     }
 
+    /**
+     * Traduce bajo demanda la página actual usando OCR local y ML Kit Translate (EN → ES).
+     * Reutiliza la traducción en caché de la sesión si ya se procesó la misma página.
+     * En modo streaming, [streamBitmapProvider] obtiene el [Bitmap] de la página desde Coil.
+     */
+    fun translateCurrentPage(streamBitmapProvider: (suspend (Int) -> Bitmap?)? = null) {
+        val state = _uiState.value
+        if (!state.isReady) return
+        val pageIndex = state.currentPage
+
+        translatedPageCache[pageIndex]?.let { cached ->
+            translationJob?.cancel()
+            _uiState.update { it.copy(translationState = PdfTranslationState.Success(pageIndex, cached)) }
+            return
+        }
+
+        translationJob?.cancel()
+        translationJob = viewModelScope.launch {
+            _uiState.update { it.copy(translationState = PdfTranslationState.Loading(pageIndex)) }
+            val bitmap = when (state.mode) {
+                is PdfSourceMode.NativeRenderer -> renderPageBitmap(pageIndex)
+                is PdfSourceMode.StreamFromKomga -> streamBitmapProvider?.invoke(pageIndex)
+            }
+            if (bitmap == null) {
+                _uiState.update {
+                    it.copy(
+                        translationState = PdfTranslationState.Error(
+                            pageIndex = pageIndex,
+                            message = "No se pudo obtener la imagen de la página para traducir."
+                        )
+                    )
+                }
+                return@launch
+            }
+
+            pageTranslator.translatePage(bitmap)
+                .onSuccess { translated ->
+                    if (translated.isBlank()) {
+                        _uiState.update {
+                            it.copy(translationState = PdfTranslationState.Empty(pageIndex))
+                        }
+                    } else {
+                        translatedPageCache[pageIndex] = translated
+                        _uiState.update {
+                            it.copy(translationState = PdfTranslationState.Success(pageIndex, translated))
+                        }
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            translationState = PdfTranslationState.Error(
+                                pageIndex = pageIndex,
+                                message = error.localizedMessage ?: "Error al traducir la página"
+                            )
+                        )
+                    }
+                }
+        }
+    }
+
+    /** Cierra el panel de traducción y cancela cualquier traducción en curso. */
+    fun dismissTranslation() {
+        translationJob?.cancel()
+        translationJob = null
+        _uiState.update { it.copy(translationState = PdfTranslationState.Idle) }
+    }
+
     /** Invalida trabajos anteriores, suelta la caché sin reciclar bitmaps y cierra renderizador y descriptor bajo el mismo bloqueo; tolera errores de cierre. */
     private fun closeRenderer() = synchronized(rendererLock) {
         rendererGeneration++
@@ -300,7 +386,10 @@ class PdfReaderViewModel(
     }
 
     override fun onCleared() {
-        super.onCleared()
+        //super.onCleared()
+        translationJob?.cancel()
+        translatedPageCache.clear()
+        pageTranslator.close()
         closeRenderer()
     }
 

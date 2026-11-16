@@ -86,6 +86,10 @@ dependencies {
   implementation(libs.coil.compose)
   implementation(libs.androidx.datastore.preferences)
   implementation(libs.androidx.compose.material.icons.extended)
+
+  // On-device OCR & Translation (ML Kit)
+  implementation(libs.mlkit.text.recognition)
+  implementation(libs.mlkit.translate)
 }
 
 configurations.androidTestImplementation.configure {

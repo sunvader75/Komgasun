@@ -1,6 +1,7 @@
 package com.sunvader.komgasun.ui.reader.pdf
 
 import android.graphics.Bitmap
+import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -21,23 +22,32 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -61,6 +71,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
+import coil.imageLoader
+import coil.request.SuccessResult
 import com.sunvader.komgasun.ui.reader.PagePreloader
 import com.sunvader.komgasun.ui.reader.readerPageRequest
 import com.sunvader.komgasun.KomgasunApp
@@ -92,7 +104,18 @@ fun PdfReaderScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var showDeleteDialog by remember { mutableStateOf(false) }
+
+    val requestTranslation: () -> Unit = {
+        viewModel.translateCurrentPage { pageIndex ->
+            val page = state.streamPages.getOrNull(pageIndex)
+            val pageNumber = page?.number ?: (pageIndex + 1)
+            val imageUrl = KomgaApiClient.getPageImageUrl(state.serverUrl, bookId, pageNumber)
+            val result = context.imageLoader.execute(readerPageRequest(context, imageUrl))
+            (result as? SuccessResult)?.drawable?.toBitmap()
+        }
+    }
 
     if (showDeleteDialog) {
         AlertDialog(
@@ -426,6 +449,14 @@ fun PdfReaderScreen(
                                     )
                                 }
 
+                                IconButton(onClick = requestTranslation) {
+                                    Icon(
+                                        Icons.Default.Translate,
+                                        contentDescription = "Traducir página",
+                                        tint = Color.White
+                                    )
+                                }
+
                                 if (state.mode is PdfSourceMode.StreamFromKomga) {
                                     IconButton(
                                         onClick = viewModel::downloadAndRenderLocally
@@ -535,6 +566,125 @@ fun PdfReaderScreen(
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (state.translationState !is PdfTranslationState.Idle) {
+            PdfTranslationBottomSheet(
+                translationState = state.translationState,
+                onDismiss = viewModel::dismissTranslation,
+                onRetry = requestTranslation
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PdfTranslationBottomSheet(
+    translationState: PdfTranslationState,
+    onDismiss: () -> Unit,
+    onRetry: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val pageNumber = when (translationState) {
+        PdfTranslationState.Idle -> 0
+        is PdfTranslationState.Loading -> translationState.pageIndex + 1
+        is PdfTranslationState.Success -> translationState.pageIndex + 1
+        is PdfTranslationState.Empty -> translationState.pageIndex + 1
+        is PdfTranslationState.Error -> translationState.pageIndex + 1
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Traducción · Página $pageNumber",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "ML Kit local (EN → ES)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = stringResource(R.string.close)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            when (translationState) {
+                PdfTranslationState.Idle -> Unit
+                is PdfTranslationState.Loading -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 28.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator()
+                        Text(
+                            text = "Reconociendo texto y traduciendo...\n(La primera vez descarga el modelo local)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                is PdfTranslationState.Success -> {
+                    SelectionContainer {
+                        Text(
+                            text = translationState.translatedText,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                        )
+                    }
+                }
+                is PdfTranslationState.Empty -> {
+                    Text(
+                        text = "No se detectó texto en esta página.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 16.dp)
+                    )
+                }
+                is PdfTranslationState.Error -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = translationState.message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Button(onClick = onRetry) {
+                            Text("Reintentar")
                         }
                     }
                 }

@@ -10,9 +10,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.SideEffect
 import com.sunvader.komgasun.ui.common.LocalReaderFitScale
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import com.sunvader.komgasun.ui.common.LocalReaderPageReduction
+import com.sunvader.komgasun.ui.common.LocalReaderVerticalScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
@@ -44,6 +46,7 @@ internal fun PdfPageContent(
 ) {
     val fitScale = LocalReaderFitScale.current
     val reduction = LocalReaderPageReduction.current
+    val verticalScroll = LocalReaderVerticalScroll.current
     val density = androidx.compose.ui.platform.LocalDensity.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
         androidx.compose.runtime.LaunchedEffect(restartScale, maxWidth, maxHeight, imageWidth, imageHeight) {
@@ -61,6 +64,12 @@ internal fun PdfPageContent(
             val pageHeight = pdfPageHeight(maxWidth.value, maxHeight.value, imageWidth, imageHeight, reduction).dp
             key(resetKey) {
                 val scrollState = rememberScrollState()
+                SideEffect { verticalScroll?.value = scrollState }
+                DisposableEffect(scrollState) {
+                    onDispose {
+                        if (verticalScroll?.value === scrollState) verticalScroll.value = null
+                    }
+                }
                 Box(
                     Modifier.fillMaxSize().verticalScroll(scrollState, enabled = scrollEnabled),
                     contentAlignment = Alignment.TopCenter
@@ -69,6 +78,7 @@ internal fun PdfPageContent(
                 }
             }
         } else {
+            SideEffect { verticalScroll?.value = null }
             content(Modifier.fillMaxSize())
         }
     }

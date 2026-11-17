@@ -3,6 +3,7 @@ package com.sunvader.komgasun.ui.common
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.exponentialDecay
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
@@ -39,6 +40,7 @@ internal fun readerMinimumScale(minScale: Float, fitScale: Float): Float =
     if (fitScale.isFinite() && fitScale > 0f) minOf(minScale, fitScale) else minScale
 
 internal val LocalReaderPageReduction = staticCompositionLocalOf { 1f }
+internal val LocalReaderVerticalScroll = staticCompositionLocalOf<androidx.compose.runtime.MutableState<ScrollState?>?> { null }
 
 /**
  * Pellizco hasta [maxScale]; el mínimo baja de [minScale] si hace falta para ver la página completa.
@@ -66,6 +68,7 @@ fun ZoomableBox(
     val currentMultiTouchChanged by rememberUpdatedState(onMultiTouchChanged)
     var multiTouchGesture by remember { mutableStateOf(false) }
     val pageFitScale = remember(resetKey) { mutableFloatStateOf(1f) }
+    val verticalScrollState = remember(resetKey) { mutableStateOf<ScrollState?>(null) }
     val effectiveMinScale by rememberUpdatedState(readerMinimumScale(minScale, pageFitScale.floatValue))
     var scale by zoomState.scale
     var offset by zoomState.offset
@@ -186,10 +189,16 @@ fun ZoomableBox(
                             if (drag.getDistance() > viewConfiguration.touchSlop) dragging = true
                             if (!dragging) continue
                             if (boxSize.width > 0 && boxSize.height > 0) {
-                                offset = readerPanOffset(
+                                val scrollState = verticalScrollState.value
+                                val step = readerPanWithScroll(
                                     offset, panChange, scale,
-                                    boxSize.width.toFloat(), boxSize.height.toFloat()
+                                    boxSize.width.toFloat(), boxSize.height.toFloat(),
+                                    scrollState != null
                                 )
+                                offset = step.offset
+                                if (step.scrollDelta != 0f) {
+                                    scrollState?.dispatchRawDelta(step.scrollDelta)
+                                }
                             }
                             event.changes.forEach { it.consume() }
                         }
@@ -201,18 +210,34 @@ fun ZoomableBox(
                         boxSize.width > 0 && boxSize.height > 0
                     ) {
                         val velocity = velocityTracker.calculateVelocity()
+                        val scrollState = verticalScrollState.value
                         val bounds = readerPanBounds(scale, boxSize.width.toFloat(), boxSize.height.toFloat())
+                        val minDeltaX = -bounds.x - offset.x
+                        val maxDeltaX = bounds.x - offset.x
+                        val minDeltaY = -bounds.y - offset.y - ((scrollState?.let { (it.maxValue - it.value) * scale }) ?: 0f)
+                        val maxDeltaY = bounds.y - offset.y + ((scrollState?.let { it.value * scale }) ?: 0f)
                         flingJob = motionScope.launch {
-                            val motion = Animatable(offset, Offset.VectorConverter)
+                            val motion = Animatable(Offset.Zero, Offset.VectorConverter)
                             motion.updateBounds(
-                                lowerBound = -bounds,
-                                upperBound = bounds
+                                lowerBound = Offset(minOf(minDeltaX, 0f), minOf(minDeltaY, 0f)),
+                                upperBound = Offset(maxOf(maxDeltaX, 0f), maxOf(maxDeltaY, 0f))
                             )
+                            var previous = Offset.Zero
                             motion.animateDecay(
                                 initialVelocity = Offset(velocity.x, velocity.y),
                                 animationSpec = exponentialDecay(frictionMultiplier = 0.6f)
                             ) {
-                                offset = value
+                                val delta = value - previous
+                                previous = value
+                                val step = readerPanWithScroll(
+                                    offset, delta, scale,
+                                    boxSize.width.toFloat(), boxSize.height.toFloat(),
+                                    scrollState != null
+                                )
+                                offset = step.offset
+                                if (step.scrollDelta != 0f) {
+                                    scrollState?.dispatchRawDelta(step.scrollDelta)
+                                }
                             }
                         }
                     }
@@ -232,7 +257,8 @@ fun ZoomableBox(
         val reducePage = boxSize.width > boxSize.height && scale < 1f
         CompositionLocalProvider(
             LocalReaderPageReduction provides if (reducePage) scale else 1f,
-            LocalReaderFitScale provides pageFitScale
+            LocalReaderFitScale provides pageFitScale,
+            LocalReaderVerticalScroll provides verticalScrollState
         ) {
             Box(
                 modifier = Modifier.graphicsLayer {

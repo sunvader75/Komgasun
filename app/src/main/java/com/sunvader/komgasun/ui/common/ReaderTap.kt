@@ -26,6 +26,32 @@ internal fun readerPanOffset(
 internal fun readerPanBounds(scale: Float, width: Float, height: Float): Offset =
     Offset(width * abs(scale - 1f) / 2f, height * abs(scale - 1f) / 2f)
 
+internal data class PanAndScrollStep(
+    val offset: Offset,
+    val scrollDelta: Float
+)
+
+/**
+ * Panea dentro de los límites del viewport y convierte el excedente vertical en delta de scroll
+ * (en píxeles de layout) cuando la página admite desplazamiento vertical.
+ */
+internal fun readerPanWithScroll(
+    offset: Offset,
+    pan: Offset,
+    scale: Float,
+    width: Float,
+    height: Float,
+    canScrollVertically: Boolean
+): PanAndScrollStep {
+    val nextOffset = readerPanOffset(offset, pan, scale, width, height)
+    if (!canScrollVertically || !isReaderScaled(scale) || scale <= 0f) {
+        return PanAndScrollStep(nextOffset, 0f)
+    }
+    val consumedY = nextOffset.y - offset.y
+    val remainingY = pan.y - consumedY
+    return PanAndScrollStep(nextOffset, -remainingY / scale)
+}
+
 /** Only scaled pages use the outer 15 percent for page navigation. */
 internal fun readerTapDirection(scale: Float, horizontalFraction: Float): Int = when {
     !isReaderScaled(scale) -> 0

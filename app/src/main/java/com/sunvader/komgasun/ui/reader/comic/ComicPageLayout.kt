@@ -11,6 +11,7 @@ import com.sunvader.komgasun.ui.common.LocalReaderFitScale
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import com.sunvader.komgasun.ui.common.LocalReaderPageReduction
+import com.sunvader.komgasun.ui.common.LocalReaderVerticalScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.SubcomposeAsyncImageContent
@@ -42,6 +43,7 @@ internal fun SubcomposeAsyncImageScope.ComicPageContent(
     val imageSize = painter.intrinsicSize
     val fitScale = LocalReaderFitScale.current
     val reduction = LocalReaderPageReduction.current
+    val verticalScroll = LocalReaderVerticalScroll.current
     val density = androidx.compose.ui.platform.LocalDensity.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
         androidx.compose.runtime.LaunchedEffect(restartScale, maxWidth, maxHeight, imageSize) {
@@ -60,6 +62,12 @@ internal fun SubcomposeAsyncImageScope.ComicPageContent(
             val pageHeight = comicPageHeight(maxWidth.value, maxHeight.value, imageSize.width, imageSize.height, reduction)
             androidx.compose.runtime.key(resetKey) {
                 val scrollState = rememberScrollState()
+                SideEffect { verticalScroll?.value = scrollState }
+                androidx.compose.runtime.DisposableEffect(scrollState) {
+                    onDispose {
+                        if (verticalScroll?.value === scrollState) verticalScroll.value = null
+                    }
+                }
                 androidx.compose.foundation.layout.Box(
                     Modifier.fillMaxSize().verticalScroll(scrollState, enabled = scrollEnabled),
                     contentAlignment = Alignment.TopCenter
@@ -71,6 +79,7 @@ internal fun SubcomposeAsyncImageScope.ComicPageContent(
                 }
             }
         } else {
+            SideEffect { verticalScroll?.value = null }
             this@ComicPageContent.SubcomposeAsyncImageContent(modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
         }
     }
